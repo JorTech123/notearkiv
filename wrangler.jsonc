@@ -18,6 +18,31 @@
     { "binding": "NOTER", "id": "6dbeec950d5f42d7af7cb5a45b4e3660" }
   ],
 
+  // Notegjenkjenninga kan ikke bo i en Worker: modellene er 150 MB og
+  // trenger Python. Den kjoerer derfor som en container ved siden av,
+  // og vaakner bare naar noen skanner noe. Maalt paa en ekte side:
+  // 3,7 sekunder, som gir rundt 6000 sider i maaneden innenfor det
+  // Workers Paid inkluderer.
+  //
+  // Imaget bygges av Cloudflare Workers Builds fra dette lageret.
+  // «wrangler deploy» herfra krever Docker lokalt og vil feile uten.
+  "containers": [
+    {
+      "class_name": "Notegjenkjenner",
+      "image": "./container",
+      "instance_type": "standard-2",
+      "max_instances": 3
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "GJENKJENNER", "class_name": "Notegjenkjenner" }
+    ]
+  },
+  "exports": {
+    "Notegjenkjenner": { "type": "durable-object", "storage": "sqlite" }
+  },
+
   "routes": [
     { "pattern": "notearkiv.jortech.no", "custom_domain": true }
   ],
