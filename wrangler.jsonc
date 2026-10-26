@@ -29,7 +29,10 @@
   "containers": [
     {
       "class_name": "Notegjenkjenner",
-      "image": "./container",
+      // Peker paa selve Dockerfilen, ikke mappa: wrangler avviser en
+      // katalog her. Byggekonteksten blir mappa fila ligger i, saa
+      // «COPY server.py» finner den fortsatt.
+      "image": "./container/Dockerfile",
       "instance_type": "standard-2",
       "max_instances": 3
     }
