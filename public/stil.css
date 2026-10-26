@@ -1,0 +1,456 @@
+/* Notearkiv — visning. Moerk ramme rundt hvitt papir, slik at sida
+   staar fram i et halvmoerkt oevingslokale. */
+
+:root {
+  --bak: #0d1117;
+  --bak-2: #161b22;
+  --bak-3: #21262d;
+  --kant: #30363d;
+  --tekst: #e6edf3;
+  --tekst-2: #9198a1;
+  --aksent: #4493f8;
+  --aksent-myk: #388bfd26;
+  --markor: #f0883e;
+  --ok: #3fb950;
+  --radius: 12px;
+  --hud-tid: .22s;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bak);
+  color: var(--tekst);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+}
+
+.skjerm { display: none; height: 100%; }
+.skjerm.vis { display: flex; flex-direction: column; }
+
+/* ───────────────────────────── bibliotek ───────────────────────────── */
+
+.topp {
+  padding: max(16px, env(safe-area-inset-top)) 16px 12px;
+  border-bottom: 1px solid var(--kant);
+  background: var(--bak-2);
+}
+.topp h1 { margin: 0 0 12px; font-size: 22px; letter-spacing: -.02em; }
+
+.sok-rad { position: relative; display: flex; }
+#sok {
+  flex: 1; padding: 11px 38px 11px 14px;
+  background: var(--bak); color: var(--tekst);
+  border: 1px solid var(--kant); border-radius: var(--radius);
+  font-size: 16px; outline: none;
+}
+#sok:focus { border-color: var(--aksent); box-shadow: 0 0 0 3px var(--aksent-myk); }
+.ikon {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; color: var(--tekst-2);
+  font-size: 16px; padding: 8px; cursor: pointer;
+}
+
+.filtre { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.brikke {
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  background: var(--bak-3); border: 1px solid var(--kant);
+  color: var(--tekst-2); font-size: 13px;
+}
+.brikke.paa { background: var(--aksent-myk); border-color: var(--aksent); color: var(--aksent); }
+
+.liste {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.kort {
+  background: var(--bak-2); border: 1px solid var(--kant);
+  border-radius: var(--radius); padding: 14px; cursor: pointer;
+  transition: border-color .15s, transform .15s;
+}
+.kort:hover, .kort:focus-visible { border-color: var(--aksent); transform: translateY(-2px); }
+.kort h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.kort .meta { color: var(--tekst-2); font-size: 13px; margin-bottom: 10px; }
+.merker { display: flex; gap: 6px; flex-wrap: wrap; }
+.merke {
+  font-size: 11px; padding: 3px 8px; border-radius: 999px;
+  background: var(--bak-3); color: var(--tekst-2); border: 1px solid var(--kant);
+}
+.merke.toneart { background: var(--aksent-myk); color: var(--aksent); border-color: transparent; }
+
+.tomt { text-align: center; color: var(--tekst-2); padding: 40px; }
+
+/* ─────────────────────────────── leser ─────────────────────────────── */
+
+.leser { position: relative; background: #000; overflow: hidden; }
+
+.scene {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: pan-y pinch-zoom;
+}
+.spor {
+  display: flex; height: 100%; width: 100%;
+  transition: transform .3s cubic-bezier(.22,.61,.36,1);
+  will-change: transform;
+}
+.spor.drar { transition: none; }
+
+.side {
+  flex: 0 0 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.side-innhold { position: relative; max-width: 100%; max-height: 100%; }
+.side img {
+  display: block; max-width: 100%; max-height: 100vh;
+  width: auto; height: auto; background: #fff;
+}
+.side svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* overlay-markoer */
+.takt-felt { fill: transparent; transition: fill .12s; }
+.takt-felt.naa { fill: color-mix(in srgb, var(--markor) 26%, transparent); }
+.stav-ramme { fill: none; stroke: var(--aksent); stroke-width: 2; opacity: 0; transition: opacity .2s; }
+.vis-stemme .stav-ramme.min { opacity: .85; }
+.skjult { display: none; }
+
+/* blasoner */
+.blasone {
+  position: absolute; top: 0; bottom: 0; width: 22%;
+  background: none; border: 0; cursor: pointer; z-index: 2;
+}
+.blasone.venstre { left: 0; }
+.blasone.hoyre { right: 0; }
+
+/* HUD */
+.hud {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; justify-content: space-between;
+  pointer-events: none;
+  opacity: 1; transition: opacity var(--hud-tid);
+}
+.hud.gjemt { opacity: 0; }
+.hud > * { pointer-events: auto; }
+
+.hud-topp, .hud-bunn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  background: linear-gradient(to bottom, #000c 0%, #0000 100%);
+}
+.hud-topp { padding-top: max(12px, env(safe-area-inset-top)); }
+.hud-bunn {
+  flex-direction: column; align-items: stretch; gap: 8px;
+  background: linear-gradient(to top, #000d 0%, #0000 100%);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.hud-bunn .rad { display: flex; align-items: center; gap: 10px; }
+
+.tittel-boks { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#leser-tittel { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#leser-under { font-size: 12px; color: var(--tekst-2); }
+
+.knapp {
+  background: #ffffff1a; color: var(--tekst);
+  border: 1px solid #ffffff2b; border-radius: 10px;
+  padding: 9px 14px; font-size: 14px; cursor: pointer;
+  backdrop-filter: blur(8px); white-space: nowrap;
+}
+.knapp:active { background: #ffffff2e; }
+.knapp.primaer { background: var(--aksent); border-color: transparent; color: #fff; font-weight: 600; }
+.knapp.paa { background: var(--markor); border-color: transparent; color: #000; font-weight: 600; }
+
+.velg {
+  background: #ffffff1a; color: var(--tekst);
+  border: 1px solid #ffffff2b; border-radius: 10px;
+  padding: 9px 12px; font-size: 14px; flex: 1; min-width: 0;
+}
+.velg option { background: var(--bak-2); color: var(--tekst); }
+
+.tempo { flex: 1; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--tekst-2); }
+.tempo input { flex: 1; accent-color: var(--aksent); }
+#tempo-tall { min-width: 34px; font-variant-numeric: tabular-nums; color: var(--tekst); }
+.sidetall { font-size: 13px; color: var(--tekst-2); font-variant-numeric: tabular-nums; }
+
+.takt-merke {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: #000000bf; color: #fff; padding: 18px 28px;
+  border-radius: 16px; font-size: 38px; font-weight: 700;
+  pointer-events: none; z-index: 4;
+}
+
+.laster {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--bak); color: var(--tekst-2); z-index: 10;
+}
+.laster.ferdig { display: none; }
+
+@media (max-width: 520px) {
+  .liste { grid-template-columns: 1fr; }
+  .hud-bunn .rad { flex-wrap: wrap; }
+}
+
+/* ───────────────────────────── skanner ───────────────────────────── */
+
+.skann-side { overflow: hidden; }
+.skann-skjerm { position: fixed; inset: 0; display: flex; flex-direction: column; background: #000; }
+
+.kamera-boks { position: absolute; inset: 0; overflow: hidden; }
+#video { width: 100%; height: 100%; object-fit: cover; }
+.sikte {
+  position: absolute; inset: 14% 6% 24%;
+  border: 2px dashed #ffffff5c; border-radius: 8px; pointer-events: none;
+}
+.kamera-melding {
+  position: absolute; inset: 0; margin: auto; height: max-content;
+  text-align: center; padding: 0 32px; color: var(--tekst-2);
+}
+
+.skann-topp {
+  position: relative; z-index: 2; display: flex; gap: 10px; align-items: center;
+  padding: max(12px, env(safe-area-inset-top)) 16px 12px;
+  background: linear-gradient(to bottom, #000d, #0000);
+}
+.tittel-felt {
+  flex: 1; min-width: 0; padding: 10px 12px; font-size: 16px;
+  background: #ffffff1f; color: var(--tekst);
+  border: 1px solid #ffffff33; border-radius: 10px; outline: none;
+}
+.tittel-felt::placeholder { color: #ffffff7a; }
+.tittel-felt:focus { border-color: var(--aksent); }
+.tittel-felt.mangler { border-color: #f85149; }
+
+.skann-bunn {
+  position: relative; z-index: 2; margin-top: auto;
+  padding: 10px 16px max(14px, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, #000e, #0000);
+}
+
+.stripe { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; min-height: 4px; }
+.mini { position: relative; flex: 0 0 auto; }
+.mini img {
+  height: 74px; width: auto; border-radius: 6px;
+  border: 1px solid var(--kant); background: #fff; display: block;
+}
+.mini-nr {
+  position: absolute; left: 4px; bottom: 4px;
+  background: #000000b8; color: #fff; font-size: 11px;
+  padding: 1px 6px; border-radius: 999px;
+}
+.mini-slett {
+  position: absolute; top: -6px; right: -6px; width: 22px; height: 22px;
+  border-radius: 50%; border: 0; background: #f85149; color: #fff;
+  font-size: 12px; line-height: 1; cursor: pointer;
+}
+
+.utloser-rad { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.utloser {
+  width: 68px; height: 68px; border-radius: 50%; cursor: pointer;
+  background: #fff; border: 4px solid #ffffff6b;
+  box-shadow: 0 0 0 2px #0006; flex: 0 0 auto;
+}
+.utloser:active, .utloser.blits { background: var(--markor); transform: scale(.94); }
+.velg-fil { cursor: pointer; }
+
+.framdrift {
+  position: fixed; inset: 0; z-index: 20; display: flex;
+  align-items: center; justify-content: center; background: #000000d6;
+}
+.framdrift-kort {
+  background: var(--bak-2); border: 1px solid var(--kant);
+  border-radius: var(--radius); padding: 24px; width: min(360px, 86vw);
+}
+.framdrift-kort h2 { margin: 0 0 14px; font-size: 18px; }
+.stolpe { height: 6px; background: var(--bak-3); border-radius: 999px; overflow: hidden; }
+#stolpe-fyll { height: 100%; width: 0; background: var(--aksent); transition: width .25s; }
+.framdrift-kort p { margin: 10px 0 0; color: var(--tekst-2); font-size: 14px; }
+
+.skann-lenke {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 14px; border-radius: 10px; text-decoration: none;
+  background: var(--aksent); color: #fff; font-weight: 600; font-size: 14px;
+}
+.topp-rad { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.topp-rad h1 { margin: 0; }
+
+/* [hidden] maa vinne over komponentregler som setter display.
+   Uten dette vises framdriftsdialogen med én gang, fordi
+   .framdrift setter display: flex. */
+[hidden] { display: none !important; }
+.mini-nr-tom { background: #8b4a0fcc; }
+
+/* ───────────────────── bekreft beskjæring ──────────────────────── */
+
+.bekreft-boks { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.bekreft-flate { position: relative; max-width: 100%; max-height: 100%; }
+#bekreft-lerret { display: block; max-width: 100%; max-height: 100vh; width: auto; height: auto; }
+#bekreft-svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+.bekreft-ramme {
+  fill: color-mix(in srgb, var(--aksent) 14%, transparent);
+  stroke: var(--aksent); stroke-width: 6; vector-effect: non-scaling-stroke;
+}
+.bekreft-hjorne {
+  fill: var(--aksent); stroke: #fff; stroke-width: 3;
+  vector-effect: non-scaling-stroke; cursor: grab;
+}
+.bekreft-melding { flex: 1; font-size: 14px; color: var(--tekst-2); }
+.bekreft-melding.ok { color: var(--ok); }
+.bekreft-melding.feil { color: var(--markor); }
+
+.hint { margin: 0 0 8px; font-size: 12px; color: var(--tekst-2); text-align: center; }
+
+/* ─────────────────────────── stemmebrikker ──────────────────────────── */
+
+.rad-stemmer { gap: 8px; flex-wrap: wrap; }
+.rad-merke { font-size: 12px; color: var(--tekst-2); white-space: nowrap; }
+.brikker { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.brikke {
+  background: #ffffff14; color: var(--tekst-2);
+  border: 1px solid #ffffff24; border-radius: 999px;
+  padding: 5px 11px; font-size: 12px; cursor: pointer;
+  white-space: nowrap; transition: background .14s, color .14s, border-color .14s;
+}
+.brikke.paa { background: color-mix(in srgb, var(--aksent) 30%, transparent);
+  color: var(--tekst); border-color: color-mix(in srgb, var(--aksent) 60%, transparent); }
+.brikke.min { box-shadow: inset 0 0 0 1px var(--markor); }
+.brikke:active { background: #ffffff2e; }
+
+
+/* ───────────────────────── partituret (hovedvisning) ────────────────── */
+
+.partitur-flate {
+  position: absolute; inset: 0; overflow: hidden;
+  display: flex; align-items: center;
+  background: var(--bak);
+}
+.partitur-flate[hidden] { display: none !important; }
+
+/* Spillelinja står stille; partituret glir forbi den. */
+.partitur-flate::after {
+  content: ''; position: absolute; left: 30%; top: 8%;
+  width: 2.5px; height: 84%;
+  background: var(--markor); opacity: .8; border-radius: 2px;
+  pointer-events: none;
+}
+
+.partiturspor { position: absolute; left: 0; will-change: transform; }
+
+/* Nøkler og stemmenavn står fast i venstremargen. */
+.partiturnokkel {
+  position: absolute; left: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(to right, var(--bak) 76%, transparent);
+  padding-right: 18px;
+}
+
+.noteskrift { display: block; overflow: visible; }
+.ns-linjer line { stroke: #ffffff8a; stroke-width: 1.2; }
+.ns-taktstrek line { stroke: #ffffff82; stroke-width: 1.4; }
+.ns-klammer line { stroke: #ffffffb0; stroke-width: 3; }
+.ns-taktnr { fill: #ffffff6b; font: 500 11px ui-sans-serif, system-ui, sans-serif; }
+.ns-noekkel, .ns-fortegn, .ns-oktav {
+  fill: #e9eef5; font-family: 'Bravura', 'Noto Music', 'Segoe UI Symbol', serif;
+}
+.ns-oktav { font-family: ui-sans-serif, system-ui, sans-serif; fill: #e9eef5b3; }
+.ns-hjelp line { stroke: #ffffff8a; stroke-width: 1.2; }
+
+.ns-hode { fill: #e9eef5; transition: fill .07s; }
+.ns-hode.hul { fill: none; stroke: #e9eef5; stroke-width: 2.2; }
+.ns-hode.naa { fill: var(--markor); }
+.ns-hode.hul.naa { fill: none; stroke: var(--markor); stroke-width: 3; }
+.ns-hals { stroke: #e9eef5; stroke-width: 1.8; }
+.ns-fane { fill: none; stroke: #e9eef5; stroke-width: 2.4; stroke-linecap: round; }
+.ns-punkt { fill: #e9eef5; }
+
+.ns-ord {
+  fill: #e3e9f1; text-anchor: middle;
+  font: 500 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* Stemmenavnet i margen, over hver stav. */
+.ns-stemmenavn {
+  fill: #9fb0c4; text-anchor: start;
+  font: 600 11px ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+
+.ns-pausetegn {
+  fill: #ffffff6b; text-anchor: middle;
+  font-family: 'Bravura', 'Noto Music', 'Segoe UI Symbol', serif;
+}
+
+/* ───────────────────────── stemmepanelet ────────────────────────────── */
+
+.stemmepanel {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  background: #000a; backdrop-filter: blur(6px);
+  padding: max(16px, env(safe-area-inset-left, 0px));
+}
+.stemmepanel[hidden] { display: none !important; }
+
+.stemmepanel-boks {
+  background: #141a22; border: 1px solid #ffffff1f; border-radius: 16px;
+  padding: 22px; width: min(420px, 100%);
+  max-height: 80vh; overflow: auto;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.stemmepanel-boks h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.stemmepanel-hjelp { margin: 0; font-size: 13px; color: var(--tekst-2); }
+
+.stemmeliste { display: flex; flex-direction: column; gap: 9px; }
+.stemmerad { display: flex; align-items: center; gap: 10px; }
+.stemmerad-nr {
+  font-size: 12px; color: var(--tekst-2);
+  min-width: 62px; font-variant-numeric: tabular-nums;
+}
+.stemmerad .velg { flex: 1; min-width: 0; }
+
+.stemmepanel-knapper { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* ──────────────────── stemmesteget i skanneren ──────────────────────── */
+
+.stemme-innhold {
+  flex: 1; overflow: auto;
+  padding: 24px max(18px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 14px;
+}
+.stemme-innhold h2 { margin: 0; font-size: 19px; font-weight: 600; }
+.stemme-hjelp { margin: 0; font-size: 14px; color: var(--tekst-2); }
+.stemme-merknad {
+  margin: 6px 0 0; font-size: 12.5px; line-height: 1.5;
+  color: var(--tekst-2); max-width: 46ch;
+}
+
+.stemme-liste { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+.stemme-rad { display: flex; align-items: center; gap: 12px; }
+.stemme-nr {
+  font-size: 13px; color: var(--tekst-2);
+  min-width: 66px; font-variant-numeric: tabular-nums;
+}
+.stemme-rad .velg { flex: 1; min-width: 0; }
+
+.stemme-vekk {
+  background: #ffffff14; color: var(--tekst-2);
+  border: 1px solid #ffffff24; border-radius: 9px;
+  width: 38px; height: 38px; font-size: 19px; line-height: 1;
+  cursor: pointer; flex: 0 0 auto;
+}
+.stemme-vekk:active { background: #ffffff2e; }
+.stemme-legg-til { align-self: flex-start; }
+.stemme-tall { margin: 0; font-size: 12px; color: var(--tekst-2); }
+
+/* ─────────────────── legg inn notefil (arkivsida) ───────────────────── */
+
+.arkiv-handlinger {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 2px 0 10px;
+}
+.arkiv-handlinger .knapp { cursor: pointer; }
+.import-status { font-size: 13px; color: var(--tekst-2); }
+.stemme-tittel { margin: -6px 0 0; font-size: 15px; font-weight: 600; color: var(--tekst); }

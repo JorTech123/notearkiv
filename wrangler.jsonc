@@ -1,0 +1,25 @@
+{
+  // Notearkiv — skanning, lagring og visning på notearkiv.jortech.no
+  "name": "notearkiv",
+  "main": "worker/src/worker.js",
+  "compatibility_date": "2025-06-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  // Notesider og PDF-er ligger i R2: store, uforanderlige filer som
+  // serveres med lang cache. Bøtta er opprettet i EU-jurisdiksjonen,
+  // så bindingen må si det — uten "jurisdiction" finner wrangler den ikke.
+  "r2_buckets": [
+    { "binding": "FILER", "bucket_name": "notearkiv", "jurisdiction": "eu" }
+  ],
+
+  // Katalogen blir derimot liggende i KV. Den er liten (~85 kB) og leses
+  // ved hvert eneste sidelast, og det er akkurat det KV er bygget for.
+  "kv_namespaces": [
+    { "binding": "NOTER", "id": "6dbeec950d5f42d7af7cb5a45b4e3660" }
+  ],
+
+  "routes": [
+    { "pattern": "notearkiv.jortech.no", "custom_domain": true }
+  ],
+  "observability": { "enabled": true }
+}

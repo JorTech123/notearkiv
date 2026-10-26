@@ -1,0 +1,149 @@
+{
+  "_lesmeg": [
+    "Hvilke staver noten har, ovenfra og ned. Dette er det eneste maskinen ikke klarer aa",
+    "lese paalitelig, og det du ser paa ett sekund. Opuscan spoer om det samme.",
+    "",
+    "Gyldige verdier: tenor, bass, baryton, sopran, alt, piano.",
+    "  tenor  -> klinger en oktav under det som staar skrevet (G-noekkel med liten 8)",
+    "  piano  -> hoppes over, spilles ikke av",
+    "",
+    "Har en stav to stemmer (vanlig i sammentrengt korpartitur), blir de",
+    "'1. tenor' og '2. tenor', eller 'baryton' og 'bass'.",
+    "",
+    "Kjoer etterpaa:  node tools/src/noter-fra-import.js"
+  ],
+  "hark-the-herald-angels-sing": {
+    "staver": [
+      "tenor",
+      "bass"
+    ],
+    "_sett": "bekreftet av Joergen: tenor og bass"
+  },
+  "anders-herre-en-sangers-b-nn": {
+    "staver": [
+      "tenor",
+      "baryton",
+      "bass"
+    ],
+    "_sett": "bekreftet i noten: Tenor / Baryton / Bass"
+  },
+  "my-way": {
+    "staver": [
+      "tenor",
+      "tenor",
+      "baryton",
+      "bass",
+      "piano",
+      "piano"
+    ],
+    "_sett": "bekreftet i noten: Tenor 1 / Tenor 2 / Baritone / Bass / Piano"
+  },
+  "cant-help-falling-in-love": {
+    "staver": [
+      "tenor",
+      "bass"
+    ]
+  },
+  "do-you-hear-the-people-sing": {
+    "staver": [
+      "tenor",
+      "bass",
+      "piano",
+      "piano"
+    ]
+  },
+  "fly-me-to-the-moon": {
+    "staver": [
+      "tenor",
+      "bass",
+      "piano",
+      "piano"
+    ],
+    "_sett": "lest av filene: G-stav + F-stav + klaver i to staver"
+  },
+  "he-ain-t-heavy-he-s-my-brother": {
+    "staver": [
+      "tenor",
+      "bass",
+      "piano",
+      "piano"
+    ],
+    "_sett": "lest av filene"
+  },
+  "still-still-still": {
+    "staver": [
+      "tenor",
+      "bass"
+    ]
+  },
+  "take-me-home-country-roads": {
+    "staver": [
+      "tenor",
+      "bass",
+      "piano",
+      "piano"
+    ],
+    "_sett": "lest av filene: G-stav + F-stav + klaver i to staver"
+  },
+  "the-rose": {
+    "staver": [
+      "tenor",
+      "bass",
+      "piano",
+      "piano"
+    ]
+  },
+  "vi-sees-igjen": {
+    "staver": [
+      "tenor",
+      "bass"
+    ]
+  },
+  "you-raise-me-up": {
+    "staver": [
+      "tenor",
+      "bass",
+      "piano",
+      "piano"
+    ]
+  },
+  "you-ll-never-walk-alone": {
+    "staver": [
+      "tenor",
+      "bass"
+    ]
+  },
+  "_merk": "Bekreftede oppsett staar med _sett. Resten er gjetninger - rett dem der avspillingen bommer.",
+  "anders-herre-test-mvpsoc88": {
+    "staver": [
+      "tenor",
+      "baryton",
+      "bass"
+    ],
+    "_sett": "fra skanneren: 1. tenor, baryton, 2. bass"
+  },
+  "anders-herre-test": {
+    "staver": [
+      "tenor",
+      "baryton",
+      "bass"
+    ],
+    "_sett": "fra skanneren: 1. tenor, baryton, 2. bass"
+  },
+  "anders-test-2": {
+    "staver": [
+      "tenor",
+      "baryton",
+      "bass"
+    ],
+    "_sett": "fra skanneren: tenor, baryton, bass"
+  },
+  "anders-test-2-mvpthiln": {
+    "staver": [
+      "tenor",
+      "baryton",
+      "bass"
+    ],
+    "_sett": "fra skanneren: tenor, baryton, bass"
+  }
+}

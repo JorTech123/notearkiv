@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Notearkiv</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+
+<!-- ───────────────────────────────── bibliotek ───────────────────────────── -->
+<section id="bibliotek" class="skjerm vis">
+  <header class="topp">
+    <div class="topp-rad"><h1>Notearkiv</h1><a href="skann" class="skann-lenke">&#128247; Skann noter</a></div>
+    <div class="sok-rad">
+      <input id="sok" type="search" placeholder="Søk tittel, komponist, toneart…" autocomplete="off" spellcheck="false">
+      <button id="nullstill" class="ikon" title="Tøm søk" hidden>✕</button>
+    </div>
+    <div id="filtre" class="filtre"></div>
+    <div class="arkiv-handlinger">
+      <label class="knapp" for="notefil" title="Legg inn en notefil fra Opuscan eller liknende">
+        ⤒ Legg inn notefil
+      </label>
+      <input id="notefil" type="file" accept=".musicxml,.mxl,.xml" hidden>
+      <span id="import-status" class="import-status"></span>
+    </div>
+  </header>
+  <div id="liste" class="liste"></div>
+  <p id="tomt" class="tomt" hidden>Ingen treff.</p>
+</section>
+
+<!-- ────────────────────────────────── leser ──────────────────────────────── -->
+<section id="leser" class="skjerm leser">
+  <div id="scene" class="scene">
+    <!-- Hovedvisninga: notene satt paa nytt fra dataene. -->
+    <div id="partitur" class="partitur-flate">
+      <div id="partiturspor" class="partiturspor"></div>
+      <div id="partiturnokkel" class="partiturnokkel" hidden></div>
+    </div>
+    <!-- Den innskannede originalen, bak en knapp. -->
+    <div id="spor" class="spor" hidden></div>
+  </div>
+
+  <!-- trykksoner for bla, ligger under kontrollene -->
+  <button id="forrige" class="blasone venstre" aria-label="Forrige side"></button>
+  <button id="neste" class="blasone hoyre" aria-label="Neste side"></button>
+
+  <div id="hud" class="hud">
+    <div class="hud-topp">
+      <button id="tilbake" class="knapp">‹ Arkiv</button>
+      <div class="tittel-boks">
+        <span id="leser-tittel"></span>
+        <span id="leser-under"></span>
+      </div>
+      <button id="fullskjerm" class="knapp" title="Fullskjerm">⛶</button>
+    </div>
+
+    <div class="hud-bunn">
+      <div class="rad">
+        <select id="stemmevalg" class="velg" title="Stemme"></select>
+        <button id="tilstart" class="knapp" title="Til begynnelsen">⏮</button>
+        <button id="spill" class="knapp primaer">▶ Spill</button>
+        <button id="klang" class="knapp paa" title="Hele koret synger teksten — din stemme fremst">♫ Kor</button>
+        <button id="stemmenavn" class="knapp" title="Si hvilken stemme hver notelinje er">✎ Stemmer</button>
+        <button id="visklaver" class="knapp" title="Vis klaverstemmene i noten">🎹</button>
+        <button id="visning" class="knapp" title="Bytt mellom de nye notene og den innskannede originalen">⎙ Original</button>
+        <button id="ovingsmodus" class="knapp" title="Vis bare din egen stemme, i større skrift">♪ Min stemme</button>
+        <a id="last-ned" class="knapp" download hidden title="Last ned stemmen som lydfil">⤓ Lyd</a>
+      </div>
+      <div class="rad rad-stemmer">
+        <span class="rad-merke">Hører:</span>
+        <div id="stemmebrikker" class="brikker"></div>
+      </div>
+      <div class="rad">
+        <label class="tempo">
+          <span id="tempo-tall">80</span>
+          <input id="tempo" type="range" min="30" max="160" value="80">
+        </label>
+        <span id="sidetall" class="sidetall"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="stemmepanel" class="stemmepanel" hidden>
+    <div class="stemmepanel-boks">
+      <h2>Hvilken stemme er hver linje?</h2>
+      <p class="stemmepanel-hjelp">Ovenfra og ned, slik de står i noten.</p>
+      <div id="stemmeliste" class="stemmeliste"></div>
+      <div class="stemmepanel-knapper">
+        <button id="stemmepanel-lukk" class="knapp">Avbryt</button>
+        <button id="stemmepanel-lagre" class="knapp primaer">Lagre</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="takt-merke" class="takt-merke" hidden></div>
+</section>
+
+<div id="laster" class="laster">Laster arkiv…</div>
+
+<script src="stemmelyd.js"></script>
+<script src="noteskrift.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

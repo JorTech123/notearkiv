@@ -1,0 +1,22 @@
+{
+  "name": "notearkiv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Notearkiv - opprensking, analyse og visning av scannede korneter",
+  "type": "commonjs",
+  "scripts": {
+    "rens": "node tools/src/cli.js",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
+    "@napi-rs/canvas": "0.1.65",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "4.10.38",
+    "sharp": "0.33.5",
+    "tesseract.js": "5.1.1"
+  },
+  "devDependencies": {
+    "wrangler": "^4.153.0"
+  }
+}

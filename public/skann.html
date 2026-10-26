@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Skann noter</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body class="skann-side">
+
+<!-- ───────────────────────────── kamera ──────────────────────────── -->
+<section id="kamera-skjerm" class="skann-skjerm">
+  <div class="kamera-boks">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="arbeid" hidden></canvas>
+    <p id="kamera-melding" class="kamera-melding">Starter kamera…</p>
+  </div>
+
+  <div class="skann-topp">
+    <a href="./" class="knapp">‹ Arkiv</a>
+    <input id="tittel" class="tittel-felt" type="text" placeholder="Tittel på stykket" autocomplete="off">
+    <button id="bytt-kamera" class="knapp" title="Bytt kamera">⟲</button>
+  </div>
+
+  <div class="skann-bunn">
+    <div id="stripe" class="stripe"></div>
+    <p class="hint">Hele arket i bildet — kantene finnes automatisk</p>
+    <div class="utloser-rad">
+      <label class="velg-fil knapp">
+        Fra galleri
+        <input id="fra-fil" type="file" accept="image/*" multiple hidden>
+      </label>
+      <button id="utloser" class="utloser" aria-label="Ta bilde av siden"></button>
+      <button id="lagre" class="knapp primaer" disabled>Lagre</button>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────── bekreft beskjæring ───────────────────── -->
+<section id="bekreft-skjerm" class="skann-skjerm" hidden>
+  <div class="bekreft-boks">
+    <div id="bekreft-flate" class="bekreft-flate">
+      <canvas id="bekreft-lerret"></canvas>
+      <svg id="bekreft-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+  <div class="skann-topp">
+    <button id="ta-om-igjen" class="knapp">‹ Ta på nytt</button>
+    <span id="bekreft-melding" class="bekreft-melding"></span>
+  </div>
+  <div class="skann-bunn">
+    <p class="hint">Dra i hjørnene hvis rammen ikke treffer</p>
+    <div class="utloser-rad">
+      <button id="hele-bildet" class="knapp">Hele bildet</button>
+      <button id="bruk-utsnitt" class="knapp primaer">Bruk siden</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── hvilken stemme er hver linje? ────────────────────────────────── -->
+<section id="stemme-skjerm" class="skann-skjerm" hidden>
+  <div class="stemme-innhold">
+    <h2>Hvilken stemme er hver linje?</h2>
+    <p class="stemme-tittel" id="stemme-tittel"></p>
+    <p id="stemme-hjelp" class="stemme-hjelp"></p>
+    <div id="stemme-liste" class="stemme-liste"></div>
+    <button id="stemme-legg-til" class="knapp stemme-legg-til" type="button">+ Legg til linje</button>
+    <p class="stemme-tall"><span id="stemme-antall">0</span> linjer</p>
+    <p class="stemme-merknad">
+      Dette er det eneste maskinen ikke kan lese ut av et skannet
+      partitur. Svaret ditt styrer både navn, toneleie og lydfiler.
+    </p>
+  </div>
+  <div class="verktoylinje">
+    <button id="stemme-tilbake" class="knapp">‹ Tilbake</button>
+    <span class="bekreft-melding"></span>
+    <button id="stemme-ferdig" class="knapp primaer">Lagre noten</button>
+  </div>
+</section>
+
+<div id="framdrift" class="framdrift" hidden>
+  <div class="framdrift-kort">
+    <h2 id="framdrift-tittel">Lagrer…</h2>
+    <div class="stolpe"><div id="stolpe-fyll"></div></div>
+    <p id="framdrift-tekst"></p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="dokument.js"></script>
+<script src="noteanalyse.js"></script>
+<script src="skann.js"></script>
+</body>
+</html>

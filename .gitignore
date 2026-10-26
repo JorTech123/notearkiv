@@ -1,0 +1,22 @@
+# Notene selv hører ikke hjemme i et kodelager.
+#
+# data/ er innskannede partiturer — opphavsrettslig beskyttet materiale
+# som tilhører koret, ikke koden. De ligger i R2, og skal ikke speiles
+# til GitHub. (137 MB, og det er ikke grunnen.)
+#
+# Oppsettet over hvilke stemmer hvert stykke har, er derimot vanlig
+# prosjektkonfigurasjon og tas med.
+data/*
+!data/oppsett.json
+
+node_modules/
+.wrangler/
+dist/
+
+# Tesseract-modellen følger med Audiveris-oppsettet og lastes ned ved
+# behov; den er for stor til å ligge her.
+*.traineddata
+
+*.log
+.DS_Store
+Thumbs.db
