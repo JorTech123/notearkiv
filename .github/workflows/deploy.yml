@@ -71,6 +71,10 @@ jobs:
             echo "::error::Containeren svarte ikke paa /oppe. Ingenting rulles ut."
             exit 1
           fi
+          # Ogsaa naar alt gaar bra: byggeloggen krever innlogging aa
+          # lese, men annotasjoner er aapne. Her ser man blant annet om
+          # JAVA_TOOL_OPTIONS faktisk blir plukket opp.
+          echo "::notice::Verktoey i containeren: $(echo "$verktoy" | tr '\n' ' ' | cut -c1-900)"
           case "$verktoy" in
             *'"audiveris": true'*|*'"audiveris":true'*) ;;
             *) # Svaret MAA staa i selve feilmeldinga. Byggeloggen her

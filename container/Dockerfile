@@ -84,8 +84,15 @@ RUN mkdir -p /usr/local/share/tessdata \
 # denne containeren — hver gang, med sju gigabyte ledig. Java sizer
 # traadpuljene og GC-traadene sine etter antall kjerner, saa her
 # holdes den til én.
+#
+# -Xmx1g og ExitOnOutOfMemoryError: paa én av sidene blir Audiveris
+# drept med signal 9 i det den gaar inn i STEMS — uten en eneste linje
+# etterpaa. Et drap utenfra betyr kjernen, og kjernen dreper for minne.
+# Med et lavere tak rekker Java aa se det selv og si fra, i stedet for
+# aa forsvinne i stillhet. Andre sider kjoerer forbi STEMS uten videre,
+# saa dette gjelder innholdet paa den ene sida, ikke containeren.
 ENV TESSDATA_PREFIX=/usr/local/share/tessdata \
-    JAVA_TOOL_OPTIONS="-Djava.util.Arrays.useLegacyMergeSort=true -Djava.awt.headless=true -Xmx2g -XX:ActiveProcessorCount=1 -Djava.util.concurrent.ForkJoinPool.common.parallelism=1"
+    JAVA_TOOL_OPTIONS="-Djava.util.Arrays.useLegacyMergeSort=true -Djava.awt.headless=true -Xmx1g -XX:+ExitOnOutOfMemoryError -XX:ActiveProcessorCount=1 -Djava.util.concurrent.ForkJoinPool.common.parallelism=1"
 
 WORKDIR /app
 COPY server.py /app/server.py
