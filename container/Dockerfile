@@ -74,8 +74,12 @@ RUN mkdir -p /usr/local/share/tessdata \
 # sammenlikninger ikke er transitiv; den gamle flettesorteringen er
 # mindre kresen og kommer gjennom.
 # headless: det finnes ingen skjerm her.
+#
+# -Xmx: Java tar som standard en fjerdedel av maskinens minne, og
+# modellene til homr ligger fortsatt i det samme minnet. To gigabyte
+# holder godt til ett ark, og da er det rikelig igjen til resten.
 ENV TESSDATA_PREFIX=/usr/local/share/tessdata \
-    JAVA_TOOL_OPTIONS="-Djava.util.Arrays.useLegacyMergeSort=true -Djava.awt.headless=true"
+    JAVA_TOOL_OPTIONS="-Djava.util.Arrays.useLegacyMergeSort=true -Djava.awt.headless=true -Xmx2g"
 
 WORKDIR /app
 COPY server.py /app/server.py

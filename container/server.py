@@ -12,9 +12,9 @@ ting:
   Audiveris   klassisk. Svakere paa noter, men leser sangteksten.
 
 Begge lesingene sendes tilbake, og Worker-en legger teksten fra den ene
-paa tonene fra den andre (se worker/src/import.js). Audiveris startes
-FOERST og faar gaa som en egen prosess mens homr jobber, saa de to
-deler tida i stedet for aa legges etter hverandre.
+paa tonene fra den andre (se worker/src/import.js). De kjoerer etter
+hverandre, ikke samtidig: instansen har én vCPU, saa parallellkjoering
+sparer ingen tid — den krever bare minnet til begge paa én gang.
 
   POST /les        bildebytes i kroppen  ->  JSON {noter, tekst}
   GET  /oppe       er den klar?
@@ -50,33 +50,28 @@ SPRAAK = os.environ.get("NOTE_SPRAAK", "nor+eng")
 AUDIVERIS_FRIST = int(os.environ.get("NOTE_TEKSTFRIST", "240"))
 
 
-def start_tekst(bilde: str, mappe: str):
-    """Starter Audiveris paa bildet og gir prosessen tilbake med én gang.
+def les_tekst(bilde: str, mappe: str):
+    """Kjoerer Audiveris paa bildet og graver MusicXML-en ut av .mxl-fila.
 
-    Den kalles FOER homr, saa Java-en jobber mens modellene maler.
-    Returnerer None om Audiveris ikke finnes — da gaar vi uten tekst.
+    Gir (xml, None) naar det gikk, og (None, grunn) ellers. Ingen
+    unntak slipper ut: at teksten mangler skal aldri felle notene.
+
+    Den kjoerer ETTER homr, ikke samtidig. Instansen har én vCPU, saa
+    to CPU-tunge oppgaver ved siden av hverandre tar like lang tid
+    samlet som etter hverandre — men krever minnet til begge paa én
+    gang. Og det er nok til at kjernen rydder bort den ene midt i.
     """
     if not os.path.exists(AUDIVERIS):
-        return None
+        return None, "Audiveris er ikke installert"
     ut = os.path.join(mappe, "aud")
     os.makedirs(ut, exist_ok=True)
-    return subprocess.Popen(
+    proc = subprocess.Popen(
         [AUDIVERIS, "-batch", "-transcribe", "-export", "-output", ut,
          "-option",
          "org.audiveris.omr.text.Language.defaultSpecification=" + SPRAAK,
          "--", bilde],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
-
-
-def hent_tekst(proc, mappe: str):
-    """Venter paa Audiveris og graver MusicXML-en ut av .mxl-fila.
-
-    Gir (xml, None) naar det gikk, og (None, grunn) ellers. Ingen
-    unntak slipper ut: at teksten mangler skal aldri felle notene.
-    """
-    if proc is None:
-        return None, "Audiveris er ikke installert"
     try:
         logg = proc.communicate(timeout=AUDIVERIS_FRIST)[0] or ""
     except subprocess.TimeoutExpired:
@@ -86,7 +81,12 @@ def hent_tekst(proc, mappe: str):
     except Exception as e:                          # noqa: BLE001
         return None, "Audiveris feilet: %s" % e
 
-    ut = os.path.join(mappe, "aud")
+    # Negativ utfallskode betyr drept av et signal. -9 er SIGKILL, som
+    # her stort sett betyr at kjernen tok den for aa frigjoere minne —
+    # og da staar det ingen feilmelding noe sted.
+    if proc.returncode is not None and proc.returncode < 0:
+        return None, "Audiveris ble drept av signal %d" % -proc.returncode
+
     traff = []
     for rot, _, filer in os.walk(ut):
         for f in filer:
@@ -94,10 +94,13 @@ def hent_tekst(proc, mappe: str):
                 traff.append(os.path.join(rot, f))
     if not traff:
         # Audiveris melder «Created scores: []» uten feilkode naar den
-        # ikke fant noter i det hele tatt. Siste linje sier som regel
-        # hvorfor.
-        hale = [l for l in logg.splitlines() if l.strip()][-1:]
-        return None, "Audiveris eksporterte ingenting. " + (hale[0] if hale else "")
+        # ikke fant noter i det hele tatt. Linjene som sier noe er
+        # WARN/ERROR, ikke den siste — den er som regel bare framdrift.
+        linjer = [l.strip() for l in logg.splitlines() if l.strip()]
+        sier = [l for l in linjer if ("WARN" in l or "ERROR" in l
+                                      or "Exception" in l or "Caused by" in l)]
+        return None, ("Audiveris (kode %s) eksporterte ingenting. "
+                      % proc.returncode) + " | ".join((sier or linjer)[-4:])[:400]
 
     fil = sorted(traff)[0]
     try:
@@ -148,16 +151,10 @@ def les(bytes_inn: bytes, filendelse: str = ".jpg") -> dict:
         with open(bilde, "wb") as f:
             f.write(bytes_inn)
 
-        proc = start_tekst(bilde, mappe)
-        try:
-            noter = les_noter(bilde)
-        except Exception:
-            if proc is not None:
-                proc.kill()
-                proc.communicate()
-            raise
-
-        tekst, grunn = hent_tekst(proc, mappe)
+        # Notene foerst: de er poenget, og de skal vaere i hus foer vi
+        # bruker tid paa teksten.
+        noter = les_noter(bilde)
+        tekst, grunn = les_tekst(bilde, mappe)
         if grunn:
             sys.stderr.write("ingen tekst denne gangen: %s\n" % grunn)
         return {"noter": noter, "tekst": tekst, "tekstfeil": grunn}
