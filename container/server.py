@@ -12,6 +12,7 @@ Bare standardbiblioteket, saa det er ingenting ekstra aa holde ved like.
 """
 
 import os
+import socketserver
 import sys
 import tempfile
 import traceback
@@ -131,9 +132,34 @@ class Behandler(BaseHTTPRequestHandler):
         self._svar(200, xml, "application/vnd.recordare.musicxml+xml; charset=utf-8")
 
 
+class Tjener(ThreadingHTTPServer):
+    """ThreadingHTTPServer som ikke slaar opp sitt eget vertsnavn.
+
+    http.server kaller socket.getfqdn() naar den binder. Vertsnavnet i
+    en Cloudflare-container er lengre enn de 63 tegnene en DNS-etikett
+    kan vaere, og da kaster idna-kodingen:
+
+      UnicodeError: label too long
+        File ".../http/server.py", line 142, in server_bind
+
+    Det skjer FOER tjeneren lytter, saa containeren doer ved oppstart,
+    hver gang. Utenfra ser det ut som kapasitet — «There is no container
+    instance that can be provided to this Durable Object» — for det var
+    aldri noe aa rute til.
+
+    Navnet brukes bare i Server-hodet og i feilsider, saa vi setter det
+    selv i stedet for aa spoerre DNS om det.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "notegjenkjenner"
+        self.server_port = self.server_address[1]
+
+
 def main():
     port = int(os.environ.get("PORT", "8080"))
-    tjener = ThreadingHTTPServer(("0.0.0.0", port), Behandler)
+    tjener = Tjener(("0.0.0.0", port), Behandler)
     sys.stderr.write("notegjenkjenner lytter paa %d\n" % port)
     tjener.serve_forever()
 

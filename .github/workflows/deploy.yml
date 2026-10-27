@@ -39,6 +39,30 @@ jobs:
       - name: Installer avhengigheter
         run: npm ci --no-audit --no-fund
 
+      # Et image som ikke starter, ser helt friskt ut fra utsiden: det
+      # bygges, rulles ut, og feiler foerst naar noen skanner — og da
+      # som «There is no container instance that can be provided to this
+      # Durable Object», som peker helt feil vei. Derfor kjoeres
+      # containeren her, og utrullinga skjer bare hvis den svarer.
+      - name: Proev at containeren faktisk starter
+        run: |
+          docker build -t notegjenkjenner-proeve ./container
+          docker run -d --name proeve -p 8080:8080 notegjenkjenner-proeve
+          klar=
+          for i in $(seq 1 60); do
+            if curl -sf -m 5 http://localhost:8080/oppe > /dev/null; then klar=ja; break; fi
+            if [ -z "$(docker ps -q -f name=proeve)" ]; then break; fi
+            sleep 5
+          done
+          echo "─── containerens egen logg ───"
+          docker logs proeve 2>&1 | tail -40
+          docker rm -f proeve > /dev/null
+          if [ -z "$klar" ]; then
+            echo "::error::Containeren svarte ikke paa /oppe. Ingenting rulles ut."
+            exit 1
+          fi
+          echo "Containeren svarer. Ruller ut."
+
       - name: Bygg containeren og rull ut
         uses: cloudflare/wrangler-action@v4
         with:
