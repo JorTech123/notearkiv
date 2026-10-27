@@ -50,6 +50,29 @@ SPRAAK = os.environ.get("NOTE_SPRAAK", "nor+eng")
 AUDIVERIS_FRIST = int(os.environ.get("NOTE_TEKSTFRIST", "240"))
 
 
+def minnebilde() -> str:
+    """Hvor mye minne maskinen har, og hvor mye denne prosessen holder."""
+    tall = {}
+    try:
+        with open("/proc/meminfo") as f:
+            for linje in f:
+                navn, _, rest = linje.partition(":")
+                if navn in ("MemTotal", "MemAvailable"):
+                    tall[navn] = int(rest.split()[0]) // 1024
+    except Exception:                               # noqa: BLE001
+        pass
+    try:
+        with open("/proc/self/status") as f:
+            for linje in f:
+                if linje.startswith("VmRSS:"):
+                    tall["homr"] = int(linje.split()[1]) // 1024
+    except Exception:                               # noqa: BLE001
+        pass
+    return "maskin %s MB, ledig %s MB, homr holder %s MB" % (
+        tall.get("MemTotal", "?"), tall.get("MemAvailable", "?"),
+        tall.get("homr", "?"))
+
+
 def les_tekst(bilde: str, mappe: str):
     """Kjoerer Audiveris paa bildet og graver MusicXML-en ut av .mxl-fila.
 
@@ -85,7 +108,11 @@ def les_tekst(bilde: str, mappe: str):
     # her stort sett betyr at kjernen tok den for aa frigjoere minne —
     # og da staar det ingen feilmelding noe sted.
     if proc.returncode is not None and proc.returncode < 0:
-        return None, "Audiveris ble drept av signal %d" % -proc.returncode
+        # Tallene MAA med. Signal 9 er stort sett kjernen som rydder,
+        # og da staar det ingenting i noen logg om hvor mye som manglet
+        # — man blir staaende og gjette paa instansstoerrelsen.
+        return None, "Audiveris ble drept av signal %d (%s)" % (
+            -proc.returncode, minnebilde())
 
     traff = []
     for rot, _, filer in os.walk(ut):
