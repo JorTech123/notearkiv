@@ -1,21 +1,36 @@
 """server.py — tar imot et notebilde og gir MusicXML tilbake.
 
-Dette er hele containerens jobb. Den gjenkjenner noter og svarer; alt
-annet — stemmefordeling, tekst, lydfiler, katalogen — gjoer Worker-en.
+Dette er hele containerens jobb. Den leser arket; alt annet —
+stemmefordeling, sammenstilling, lydfiler, katalogen — gjoer Worker-en.
 Den delingen er med vilje: Worker-en er billig og alltid oppe, mens
 containeren bare vaakner naar noen faktisk skanner noe.
 
-  POST /les        bildebytes i kroppen  ->  MusicXML som tekst
+To lesere kjoerer paa det samme bildet, fordi de er gode paa hver sin
+ting:
+
+  homr        nevral. Treffer notene, men leser INGEN tekst.
+  Audiveris   klassisk. Svakere paa noter, men leser sangteksten.
+
+Begge lesingene sendes tilbake, og Worker-en legger teksten fra den ene
+paa tonene fra den andre (se worker/src/import.js). Audiveris startes
+FOERST og faar gaa som en egen prosess mens homr jobber, saa de to
+deler tida i stedet for aa legges etter hverandre.
+
+  POST /les        bildebytes i kroppen  ->  JSON {noter, tekst}
   GET  /oppe       er den klar?
 
 Bare standardbiblioteket, saa det er ingenting ekstra aa holde ved like.
 """
 
+import json
 import os
+import shutil
 import socketserver
+import subprocess
 import sys
 import tempfile
 import traceback
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Importeres ved oppstart, ikke ved foerste foresporsel: aa laste
@@ -25,15 +40,85 @@ from homr.main import ProcessingConfig, process_image
 from homr.music_xml_generator import XmlGeneratorArguments
 
 MAKS = 40 * 1024 * 1024          # et notebilde er aldri i naerheten
+AUDIVERIS = "/opt/audiveris/bin/Audiveris"
+# Koret synger norsk og engelsk om hverandre. Audiveris tar imot flere
+# spraak med pluss mellom.
+SPRAAK = os.environ.get("NOTE_SPRAAK", "nor+eng")
+# Audiveris kan henge paa et vanskelig ark. Teksten er et tillegg —
+# noter uten tekst er mye bedre enn ingen noter — saa den faar en frist
+# og blir forlatt om den ikke rekker det.
+AUDIVERIS_FRIST = int(os.environ.get("NOTE_TEKSTFRIST", "240"))
 
 
-def les_noter(bytes_inn: bytes, filendelse: str = ".jpg") -> str:
-    """Kjoerer gjenkjenneren paa ett bilde og gir MusicXML tilbake."""
-    mappe = tempfile.mkdtemp(prefix="noter-")
-    bilde = os.path.join(mappe, "side" + filendelse)
-    with open(bilde, "wb") as f:
-        f.write(bytes_inn)
+def start_tekst(bilde: str, mappe: str):
+    """Starter Audiveris paa bildet og gir prosessen tilbake med én gang.
 
+    Den kalles FOER homr, saa Java-en jobber mens modellene maler.
+    Returnerer None om Audiveris ikke finnes — da gaar vi uten tekst.
+    """
+    if not os.path.exists(AUDIVERIS):
+        return None
+    ut = os.path.join(mappe, "aud")
+    os.makedirs(ut, exist_ok=True)
+    return subprocess.Popen(
+        [AUDIVERIS, "-batch", "-transcribe", "-export", "-output", ut,
+         "-option",
+         "org.audiveris.omr.text.Language.defaultSpecification=" + SPRAAK,
+         "--", bilde],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+
+
+def hent_tekst(proc, mappe: str):
+    """Venter paa Audiveris og graver MusicXML-en ut av .mxl-fila.
+
+    Gir (xml, None) naar det gikk, og (None, grunn) ellers. Ingen
+    unntak slipper ut: at teksten mangler skal aldri felle notene.
+    """
+    if proc is None:
+        return None, "Audiveris er ikke installert"
+    try:
+        logg = proc.communicate(timeout=AUDIVERIS_FRIST)[0] or ""
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        return None, "Audiveris brukte mer enn %d s" % AUDIVERIS_FRIST
+    except Exception as e:                          # noqa: BLE001
+        return None, "Audiveris feilet: %s" % e
+
+    ut = os.path.join(mappe, "aud")
+    traff = []
+    for rot, _, filer in os.walk(ut):
+        for f in filer:
+            if f.lower().endswith((".mxl", ".musicxml", ".xml")):
+                traff.append(os.path.join(rot, f))
+    if not traff:
+        # Audiveris melder «Created scores: []» uten feilkode naar den
+        # ikke fant noter i det hele tatt. Siste linje sier som regel
+        # hvorfor.
+        hale = [l for l in logg.splitlines() if l.strip()][-1:]
+        return None, "Audiveris eksporterte ingenting. " + (hale[0] if hale else "")
+
+    fil = sorted(traff)[0]
+    try:
+        if fil.lower().endswith(".mxl"):
+            # .mxl er en zip. Scorefila er den ene oppfoeringa som ikke
+            # ligger under META-INF.
+            with zipfile.ZipFile(fil) as z:
+                navn = [n for n in z.namelist()
+                        if not n.startswith("META-INF/")
+                        and n.lower().endswith((".xml", ".musicxml"))]
+                if not navn:
+                    return None, "fant ingen score i .mxl-fila"
+                return z.read(navn[0]).decode("utf-8", "replace"), None
+        with open(fil, "r", encoding="utf-8", errors="replace") as f:
+            return f.read(), None
+    except Exception as e:                          # noqa: BLE001
+        return None, "kunne ikke lese %s: %s" % (os.path.basename(fil), e)
+
+
+def les_noter(bilde: str) -> str:
+    """Kjoerer homr paa ett bilde og gir MusicXML tilbake."""
     # Feltene maa staa akkurat slik homr definerer dem. Containeren har
     # ingen GPU, saa alt kjoerer paa CPU.
     config = ProcessingConfig(
@@ -55,6 +140,31 @@ def les_noter(bytes_inn: bytes, filendelse: str = ".jpg") -> str:
         return f.read()
 
 
+def les(bytes_inn: bytes, filendelse: str = ".jpg") -> dict:
+    """Leser ett ark med begge leserne og gir begge lesingene."""
+    mappe = tempfile.mkdtemp(prefix="noter-")
+    try:
+        bilde = os.path.join(mappe, "side" + filendelse)
+        with open(bilde, "wb") as f:
+            f.write(bytes_inn)
+
+        proc = start_tekst(bilde, mappe)
+        try:
+            noter = les_noter(bilde)
+        except Exception:
+            if proc is not None:
+                proc.kill()
+                proc.communicate()
+            raise
+
+        tekst, grunn = hent_tekst(proc, mappe)
+        if grunn:
+            sys.stderr.write("ingen tekst denne gangen: %s\n" % grunn)
+        return {"noter": noter, "tekst": tekst, "tekstfeil": grunn}
+    finally:
+        shutil.rmtree(mappe, ignore_errors=True)
+
+
 class Behandler(BaseHTTPRequestHandler):
     # Standardloggen skriver én linje per foresporsel til stderr.
     def log_message(self, fmt, *args):
@@ -71,6 +181,29 @@ class Behandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/oppe"):
             self._svar(200, "klar")
+        elif self.path.startswith("/verktoy"):
+            # Finnes begge leserne, og starter Audiveris i det hele tatt?
+            # Byggesteget spoer om dette foer noe rulles ut: et image der
+            # tekstlesinga mangler, ser ellers helt friskt ut helt til
+            # noen skanner et ark og lurer paa hvor teksten ble av.
+            svar = {"homr": True, "audiveris": False, "spraak": SPRAAK}
+            if os.path.exists(AUDIVERIS):
+                try:
+                    r = subprocess.run([AUDIVERIS, "-batch", "-help"],
+                                       capture_output=True, text=True, timeout=180)
+                    svar["audiveris"] = r.returncode == 0
+                    svar["utdrag"] = ((r.stdout or "") + (r.stderr or "")).strip()[-400:]
+                except Exception as e:              # noqa: BLE001
+                    svar["utdrag"] = str(e)
+            else:
+                svar["utdrag"] = AUDIVERIS + " finnes ikke"
+            svar["tessdata"] = sorted(
+                f for f in os.listdir(os.environ.get("TESSDATA_PREFIX", "/"))
+                if f.endswith(".traineddata")
+            ) if os.path.isdir(os.environ.get("TESSDATA_PREFIX", "")) else []
+            self._svar(200 if svar["audiveris"] else 503,
+                       json.dumps(svar, ensure_ascii=False),
+                       "application/json; charset=utf-8")
         else:
             self._svar(404, "ukjent")
 
@@ -119,7 +252,7 @@ class Behandler(BaseHTTPRequestHandler):
         endelse = ".png" if "png" in type_ else ".jpg"
 
         try:
-            xml = les_noter(bytes_inn, endelse)
+            resultat = les(bytes_inn, endelse)
         except Exception as e:                      # noqa: BLE001
             traceback.print_exc()
             # De nederste linjene i sporet staar ogsaa i svaret, ikke
@@ -129,7 +262,8 @@ class Behandler(BaseHTTPRequestHandler):
             self._svar(500, "kunne ikke lese noten: %s\n%s" % (e, spor))
             return
 
-        self._svar(200, xml, "application/vnd.recordare.musicxml+xml; charset=utf-8")
+        self._svar(200, json.dumps(resultat, ensure_ascii=False),
+                   "application/json; charset=utf-8")
 
 
 class Tjener(ThreadingHTTPServer):

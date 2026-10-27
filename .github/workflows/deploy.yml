@@ -54,6 +54,16 @@ jobs:
             if [ -z "$(docker ps -q -f name=proeve)" ]; then break; fi
             sleep 5
           done
+          # Finnes BEGGE leserne, og starter tekstleseren i det hele
+          # tatt? Uten denne sjekken ville et image uten Audiveris sett
+          # helt friskt ut — notene kommer jo — helt til noen lurer paa
+          # hvor sangteksten ble av.
+          verktoy=
+          if [ -n "$klar" ]; then
+            verktoy=$(curl -s -m 240 http://localhost:8080/verktoy || true)
+            echo "─── verktoey i containeren ───"
+            echo "$verktoy"
+          fi
           echo "─── containerens egen logg ───"
           docker logs proeve 2>&1 | tail -40
           docker rm -f proeve > /dev/null
@@ -61,7 +71,12 @@ jobs:
             echo "::error::Containeren svarte ikke paa /oppe. Ingenting rulles ut."
             exit 1
           fi
-          echo "Containeren svarer. Ruller ut."
+          case "$verktoy" in
+            *'"audiveris": true'*|*'"audiveris":true'*) ;;
+            *) echo "::error::Tekstleseren (Audiveris) starter ikke. Ingenting rulles ut."
+               exit 1 ;;
+          esac
+          echo "Begge leserne svarer. Ruller ut."
 
       - name: Bygg containeren og rull ut
         uses: cloudflare/wrangler-action@v4

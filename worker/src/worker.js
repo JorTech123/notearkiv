@@ -211,8 +211,10 @@ export default {
         if (!stykke) return svar({ feil: 'Fant ikke stykket' }, 404);
         if (!(stykke.sider || []).length) return svar({ feil: 'Stykket har ingen sider' }, 400);
 
-        const xml = [];
+        const tekstkoder = new TextEncoder();
+        const sider = [];
         const feilet = [];
+        const utenTekst = [];
         for (const side of stykke.sider) {
           const fil = await L.lesFil(String(side.fil || '').replace(/^fil\//, ''));
           if (!fil) {
@@ -220,8 +222,14 @@ export default {
             continue;
           }
           try {
-            const tekst = await lesSide(env, id, await new Response(fil.body).arrayBuffer(), fil.type);
-            xml.push(new TextEncoder().encode(tekst));
+            const lest = await lesSide(env, id, await new Response(fil.body).arrayBuffer(), fil.type);
+            sider.push({
+              noter: tekstkoder.encode(lest.noter),
+              // Tekstlesinga er et tillegg. Mangler den, staar notene
+              // igjen alene — det er fortsatt et brukbart notesett.
+              tekst: lest.tekst ? tekstkoder.encode(lest.tekst) : null,
+            });
+            if (!lest.tekst) utenTekst.push({ nr: side.nr, hvorfor: lest.tekstfeil || 'ukjent' });
           } catch (e) {
             // Aarsaken MAA med. Gjenkjenneren svarer med sin egen
             // feilmelding i kroppen, og uten den staar man igjen med
@@ -229,13 +237,13 @@ export default {
             feilet.push({ nr: side.nr, hvorfor: e.message });
           }
         }
-        if (!xml.length) {
+        if (!sider.length) {
           return svar({ feil: 'Fikk ingen toner ut av sidene', feilet }, 502);
         }
 
         let lest;
         try {
-          lest = await importerFlere(xml, {
+          lest = await importerFlere(sider, {
             id: stykke.id, tittel: stykke.tittel,
             // Stemmene brukeren oppga i skanneren. De er bedre enn noe
             // leseren kan utlede, og styrer baade antall og navn.
@@ -271,7 +279,12 @@ export default {
         await L.lagreStykke(oppdatert);
         return svar({
           ok: true, stemmer: oppdatert.stemmer, takter: oppdatert.antallTakter,
-          sider: xml.length, feilet,
+          sider: sider.length, feilet,
+          // Hvor mange stavelser som kom paa plass, og hvilke sider som
+          // ble staaende uten tekst. Et notesett uten tekst er brukbart,
+          // men man skal kunne se at det mangler — og hvorfor.
+          ord: lest.ord || 0,
+          utenTekst,
         });
       }
 

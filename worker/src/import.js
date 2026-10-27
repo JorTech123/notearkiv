@@ -92,6 +92,158 @@ function stemmerPaaStav(noter) {
 }
 
 /**
+ * Rydder én stavelse fra OCR-lesinga, eller forkaster den.
+ *
+ * Tekstleseren tar med alt som staar som tekst ved notene, og det er
+ * ikke bare sang: akkordsymboler («G(add9)/B», «Am7») staar over staven
+ * og havner i samme sekk. De skal ikke synges. Tall hoerer heller ikke
+ * hjemme i en stavelse. Resten slipper igjennom som den er — en
+ * halvlest stavelse er bedre enn ingen, saa lenge den staar paa rett
+ * sted i teksten.
+ */
+function rensStavelse(raa) {
+  if (!raa) return null;
+  const s = String(raa)
+    .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
+    .replace(/’/g, "'").replace(/[“”]/g, '"')
+    .replace(/[~|]/g, '').replace(/\s+/g, ' ')
+    .trim();
+  if (!s) return null;
+  if (/\d/.test(s)) return null;                      // tall synges ikke
+  if (/^[A-G](#|b)?(m|maj|min|dim|aug|sus|add)?(\/[A-G](#|b)?)?$/.test(s)) return null;
+  if (!/[a-zA-ZæøåÆØÅéèüö]/.test(s)) return null;
+  return s;
+}
+
+/** Stavelsene i én lesing, i den rekkefoelgen de synges. */
+function stavelserFra(doc) {
+  // Teksten henger paa én stemme, men flere staver kan ha den samme
+  // teksten under seg. Hvert (takt, slag) tas derfor bare én gang.
+  const sett = new Map();
+  for (const del of doc.deler) {
+    for (const n of del.noter) {
+      if (!n.tekst) continue;
+      const ord = rensStavelse(n.tekst.ord);
+      if (!ord) continue;
+      const k = n.takt + ':' + n.slag;
+      if (!sett.has(k)) {
+        sett.set(k, {
+          takt: n.takt, slag: n.slag, midi: n.midi,
+          tekst: { ord, del: n.tekst.del },
+        });
+      }
+    }
+  }
+  return [...sett.values()].sort((a, b) => a.takt - b.takt || a.slag - b.slag);
+}
+
+/**
+ * Notene paa hver stav, helst uten klaveret — klaveret synger ikke.
+ *
+ * Men navnet kan ikke avgjoere det alene. En nevral leser doeper alt
+ * den ser som ett system til «Piano», og et firestavs korpartitur ER
+ * ett system. Kaster vi da ut alt som heter piano, staar vi igjen uten
+ * staver i det hele tatt — og nettopp de stykkene som IKKE har klaver
+ * blir de eneste uten tekst.
+ *
+ * Derfor: luk ut klaveret bare naar det blir noe igjen. Er alt
+ * «piano», betyr navnet ingenting, og alle stavene er sangstaver.
+ */
+function sangstaver(doc) {
+  const alle = [];
+  for (const del of doc.deler) {
+    const klaver = gruppeAv(del) === 'klaver';
+    const perStav = new Map();
+    for (const n of del.noter) {
+      const k = n.stav || 1;
+      if (!perStav.has(k)) perStav.set(k, []);
+      perStav.get(k).push(n);
+    }
+    for (const liste of perStav.values()) {
+      if (liste.length >= 4) alle.push({ klaver, noter: liste });
+    }
+  }
+  const uten = alle.filter((s) => !s.klaver);
+  return (uten.length ? uten : alle).map((s) => s.noter);
+}
+
+/**
+ * Legger stavelsene fra tekstlesinga paa tonene fra notelesinga.
+ *
+ * De to leserne er uenige om nesten alt — taktnumre, antall staver,
+ * enkelttoner — saa de kan ikke stilles opp mot hverandre paa takt og
+ * slag. I stedet justeres rekkene mot hverandre som sekvenser, med
+ * tonetrinnet (uten oktav) som signal. Teksten flyttes over hver gang
+ * de to rykker fram SAMMEN — ogsaa naar tonene er ulike, for da er
+ * plassen i rekka riktig selv om den ene leste tonen feil. Det er
+ * plasseringa vi er ute etter, ikke tonen.
+ */
+function leggPaaTekst(doc, stavelser) {
+  const staver = sangstaver(doc);
+  if (!stavelser.length || !staver.length) return 0;
+
+  // Oeverste stemme baerer teksten: i en homofon korsats har den én
+  // tone per stavelse, og det er alle disse arrangementene.
+  const topp = staver.reduce((a, s) =>
+    (median(s.map((n) => n.midi)) > median(a.map((n) => n.midi)) ? s : a), staver[0]);
+  const b = topp.slice().sort((x, y) => x.takt - y.takt || x.slag - y.slag);
+  const a = stavelser;
+
+  const TREFF = 2, BOM = -1, HULL = -1;
+  const d = [], fra = [];
+  for (let i = 0; i <= a.length; i++) {
+    d.push(new Float64Array(b.length + 1).fill(-Infinity));
+    fra.push(new Array(b.length + 1).fill(null));
+  }
+  d[0][0] = 0;
+  for (let i = 0; i <= a.length; i++) {
+    for (let j = 0; j <= b.length; j++) {
+      if (d[i][j] === -Infinity) continue;
+      if (i < a.length && j < b.length) {
+        const like = ((a[i].midi % 12) + 12) % 12 === ((b[j].midi % 12) + 12) % 12;
+        const n = d[i][j] + (like ? TREFF : BOM);
+        if (n > d[i + 1][j + 1]) { d[i + 1][j + 1] = n; fra[i + 1][j + 1] = [i, j, true]; }
+      }
+      if (i < a.length && d[i][j] + HULL > d[i + 1][j]) {
+        d[i + 1][j] = d[i][j] + HULL; fra[i + 1][j] = [i, j, false];
+      }
+      if (j < b.length && d[i][j] + HULL > d[i][j + 1]) {
+        d[i][j + 1] = d[i][j] + HULL; fra[i][j + 1] = [i, j, false];
+      }
+    }
+  }
+
+  const paaSlag = new Map();
+  let i = a.length, j = b.length, satt = 0;
+  while (i > 0 || j > 0) {
+    const steg = fra[i][j];
+    if (!steg) break;
+    if (steg[2]) {
+      const note = b[steg[1]];
+      paaSlag.set(note.takt + ':' + note.slag, a[steg[0]].tekst);
+      satt++;
+    }
+    i = steg[0]; j = steg[1];
+  }
+
+  // Teksten legges paa ALLE sangstavene paa samme slag: i en homofon
+  // sats synger koret de samme ordene samtidig. Men bare ÉN tone per
+  // slag per stav skal baere stavelsen — ligger det en akkord der,
+  // ville alle tonene faatt den, og teksten kom ut dobbelt:
+  // «talc talc can can seem seem to to».
+  for (const stav of staver) {
+    const brukt = new Set();
+    for (const n of stav) {
+      const k = n.takt + ':' + n.slag;
+      if (brukt.has(k)) continue;
+      const t = paaSlag.get(k);
+      if (t) { n.tekst = t; brukt.add(k); }
+    }
+  }
+  return satt;
+}
+
+/**
  * Bygger katalogoppfoeringa.
  *
  * @param bytes   fila slik den ble lastet opp
@@ -112,10 +264,30 @@ export async function importerFlere(liste, valg) {
   const doc = { deler: [], slagPerTakt: 4, tittel: '' };
   let forskyvning = 0;
 
-  for (const bytes of liste) {
+  for (const post of liste) {
+    // En side kommer enten som bare noter — en opplastet notefil — eller
+    // som to lesinger av det samme arket, der den ene har tonene og den
+    // andre teksten. Begge formene tas imot her.
+    const erPar = post && !ArrayBuffer.isView(post) && !(post instanceof ArrayBuffer) && post.noter;
+    const noterBytes = erPar ? post.noter : post;
+    const tekstBytes = erPar ? post.tekst : null;
+
     let side;
-    try { side = await lesBytes(bytes); } catch (e) { continue; }
+    try { side = await lesBytes(noterBytes); } catch (e) { continue; }
     if (!side.deler.length) continue;
+
+    // Teksten legges paa FOER taktnumrene forskyves. De to lesingene
+    // teller takter hver for seg, og begge begynner paa arkets egen
+    // takt 1 — forskyver vi foerst, staar de ikke lenger i samme verden.
+    //
+    // At dette feiler skal aldri felle sida: tekst er et tillegg, toner
+    // er poenget.
+    if (tekstBytes) {
+      try {
+        leggPaaTekst(side, stavelserFra(await lesBytes(tekstBytes)));
+      } catch (e) { /* uten tekst, men med noter */ }
+    }
+
     if (side.slagPerTakt) doc.slagPerTakt = side.slagPerTakt;
     if (!doc.tittel && side.tittel) doc.tittel = side.tittel;
 
@@ -179,6 +351,19 @@ function byggStykke(doc, valg) {
   const rekke = [];
   const brukt = {};
 
+  // Har leseren kalt ALT for klaver, betyr navnet ingenting.
+  //
+  // En nevral leser doeper hvert system den ser til «Piano», og et
+  // firestavs korpartitur ER ett system. Tror vi paa det, blir hele
+  // stykket et klaver: ingen sangstemmer, stemmenavnene fra skanneren
+  // blir ikke brukt, og teksten faar ingen aa sitte paa. Det rammet
+  // nettopp de stykkene som IKKE har klaver.
+  //
+  // Vi overstyrer bare naar brukeren har sagt at det ER sangstemmer
+  // her. Et ekte klaverstykke faar fortsatt vaere et klaverstykke.
+  const vilHaSang = (valg.stemmer || []).some((n) => !/^klaver/i.test(n));
+  const altErKlaver = vilHaSang && doc.deler.every((d) => gruppeAv(d) === 'klaver');
+
   for (const del of doc.deler) {
     // Hver stav i delen for seg.
     const perStav = new Map();
@@ -198,7 +383,7 @@ function byggStykke(doc, valg) {
       const oktav = nokkel.oktavskift ? 0 : 0;
 
       const stemmer = stemmerPaaStav(paaStaven);
-      const gruppe = gruppeAv(del)
+      const gruppe = (altErKlaver ? null : gruppeAv(del))
         || gruppeAvLeie(median(paaStaven.map((n) => n.midi)));
       const maler = NAVN[gruppe] || NAVN.tenor;
 
@@ -260,9 +445,16 @@ function byggStykke(doc, valg) {
     }
   }
 
-  // Teksten ut til alle stemmene: koret synger de samme ordene.
+  // Teksten ut til alle SANGstemmene: koret synger de samme ordene.
+  // Klaveret synger ikke, og skal ikke ha stavelser under seg — det
+  // ville satt sangtekst under en akkompagnementsfigur som ingen
+  // synger, og gjort klaverlinja uleselig.
+  const synger = rekke.filter((n) => !/^klaver/i.test(n));
+  // Finnes det ingen sangstemmer i det hele tatt, er dette et rent
+  // klaverstykke. Da er det ingen tekst aa spre — og ingen aa fjerne.
+  if (!synger.length) return ferdig(valg, doc, rekke, ut, slagPerTakt);
   const ordPaaSlag = new Map();
-  for (const n of rekke) {
+  for (const n of synger) {
     for (const x of ut[n]) {
       if (!x.tekst) continue;
       const k = x.takt + ':' + x.slag;
@@ -270,6 +462,11 @@ function byggStykke(doc, valg) {
     }
   }
   for (const n of rekke) {
+    if (!synger.includes(n)) {
+      // Har klaveret faatt tekst fra lesinga, fjernes den her.
+      for (const x of ut[n]) { delete x.tekst; delete x.del; }
+      continue;
+    }
     let sist = null;
     const sett = new Set();
     for (const x of ut[n]) {
@@ -281,10 +478,24 @@ function byggStykke(doc, valg) {
     }
   }
 
+  return ferdig(valg, doc, rekke, ut, slagPerTakt);
+}
+
+/** Samler det ferdige stykket. */
+function ferdig(valg, doc, rekke, ut, slagPerTakt) {
   let takter = 0;
-  for (const n of rekke) for (const x of ut[n]) if (x.takt > takter) takter = x.takt;
+  const medTekst = new Set();
+  for (const n of rekke) {
+    for (const x of ut[n]) {
+      if (x.takt > takter) takter = x.takt;
+      if (x.tekst) medTekst.add(x.takt + ':' + x.slag);
+    }
+  }
 
   return {
+    // Antall stavelser som faktisk havnet paa en tone. Det er dette
+    // man ser i appen, ikke hvor mange tekstleseren fant.
+    ord: medTekst.size,
     id: valg.id,
     tittel: valg.tittel || doc.tittel || valg.id,
     stemmer: rekke,

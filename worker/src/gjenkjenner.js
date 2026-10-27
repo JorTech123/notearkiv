@@ -120,7 +120,16 @@ export class Notegjenkjenner extends DurableObject {
     throw new Error(`containeren ble ikke klar paa ${KLAR_INNEN / 1000}s: ${[...sett].join(' | ')}`);
   }
 
-  /** Leser ett bilde og gir MusicXML tilbake. */
+  /**
+   * Leser ett bilde og gir begge lesingene tilbake.
+   *
+   * {noter}      homr sin MusicXML — tonene
+   * {tekst}      Audiveris sin MusicXML — sangteksten, eller null
+   * {tekstfeil}  hvorfor teksten mangler, naar den gjoer det
+   *
+   * At teksten mangler er ingen feil: homr leser ingen tekst i det hele
+   * tatt, saa noter uten tekst er det normale minimumet.
+   */
   async les(bilde, type) {
     const port = await this.vekk();
     const svar = await port.fetch('http://container/les', {
@@ -128,16 +137,20 @@ export class Notegjenkjenner extends DurableObject {
       headers: { 'content-type': type || 'image/jpeg' },
       body: bilde,
     });
-    const tekst = await svar.text();
+    const kropp = await svar.text();
     if (!svar.ok) {
-      throw new Error(`gjenkjenneren svarte ${svar.status}: ${tekst.slice(0, 600)}`);
+      throw new Error(`gjenkjenneren svarte ${svar.status}: ${kropp.slice(0, 600)}`);
     }
-    return tekst;
+    try {
+      return JSON.parse(kropp);
+    } catch (e) {
+      throw new Error(`gjenkjenneren svarte noe annet enn JSON: ${kropp.slice(0, 300)}`);
+    }
   }
 }
 
 /**
- * Leser ett bilde og gir MusicXML tilbake.
+ * Leser ett bilde og gir {noter, tekst, tekstfeil} tilbake.
  *
  * Alle sidene i samme stykke gaar til SAMME instans (navngitt etter
  * stykket). Da er modellene alt lastet naar side to kommer.
