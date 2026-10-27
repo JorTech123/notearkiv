@@ -19,10 +19,19 @@ FROM python:3.12-slim
 # libgl/libglib: OpenCV, som homr bruker.
 # libfreetype/libfontconfig: Audiveris tegner opp sider med AWT, og den
 # bundlede Java-kjoeretiden finner ingen fonter uten dem.
+#
+# libgtk-3: Audiveris laster GTK gjennom JNA ved OPPSTART, ogsaa med
+# «-batch» og uten skjerm. Uten den doer den foer den har lest ett
+# eneste argument:
+#   UnsatisfiedLinkError: Unable to load library 'gtk-3'
+# Pakka heter «libgtk-3-0t64» etter at Debian doepte om bibliotekene i
+# time_t-overgangen, og «libgtk-3-0» foer det — vi tar den som finnes.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libgl1 libglib2.0-0 libfreetype6 libfontconfig1 \
       curl ca-certificates \
+ && (apt-get install -y --no-install-recommends libgtk-3-0t64 \
+     || apt-get install -y --no-install-recommends libgtk-3-0) \
  && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir "homr[cpu]"
