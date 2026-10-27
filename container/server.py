@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import traceback
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,7 +51,9 @@ SPRAAK = os.environ.get("NOTE_SPRAAK", "nor+eng")
 # og blir forlatt om den ikke rekker det.
 AUDIVERIS_FRIST = int(os.environ.get("NOTE_TEKSTFRIST", "240"))
 # Bredden sida forstoerres til foer tekstlesinga. Se skaler_for_tekst.
-AUDIVERIS_BREDDE = int(os.environ.get("NOTE_TEKSTBREDDE", "2600"))
+# Bredder sida proeves i, i tur og orden. Se les_tekst.
+BREDDER = [int(x) for x in
+           os.environ.get("NOTE_TEKSTBREDDER", "2600,2000,3400").split(",")]
 
 
 def _les_tall(sti, deler=1):
@@ -111,17 +114,14 @@ def minnebilde(topp=None) -> str:
                 tall.get("homr", "?")))
 
 
-def skaler_for_tekst(bilde: str, mappe: str) -> str:
-    """Forstoerrer sida foer Audiveris faar den.
+def skaler_for_tekst(bilde: str, mappe: str, bredde: int, navn: str) -> str:
+    """Skalerer sida til en gitt bredde foer Audiveris faar den.
 
     Audiveris finner notelinjeavstanden selv, men bare innenfor et
-    rimelig spenn. En telefonskanning som er skalert ned til 1700 px
-    har rundt ti piksler mellom notelinjene, og da blir alt trangt:
-    notehoder, stilker og stoey ligner paa hverandre.
-
-    Det er ogsaa den ENE forskjellen fra veien som virker paa samme
-    side lokalt — der tegnes arket opp i 2600 px foer Audiveris leser
-    det. Her gjoeres det samme.
+    rimelig spenn, og den er FOELSOM for hvor man havner i det spennet.
+    En telefonskanning paa 1700 px har rundt ti piksler mellom
+    notelinjene; da ligner notehoder, stilker og stoey paa hverandre, og
+    steget som skal skille dem ble drept av kjernen hver gang.
 
     homr faar fortsatt originalen: den har sin egen oppskalering, og
     har ingen glede av vaar.
@@ -132,11 +132,12 @@ def skaler_for_tekst(bilde: str, mappe: str) -> str:
         if img is None:
             return bilde
         h, w = img.shape[:2]
-        if w <= 0 or w >= AUDIVERIS_BREDDE:
+        if w <= 0:
             return bilde
-        ny = cv2.resize(img, (AUDIVERIS_BREDDE, round(h * AUDIVERIS_BREDDE / w)),
-                        interpolation=cv2.INTER_LANCZOS4)
-        sti = os.path.join(mappe, "stor.png")
+        ny = cv2.resize(img, (bredde, round(h * bredde / w)),
+                        interpolation=cv2.INTER_LANCZOS4 if bredde > w
+                        else cv2.INTER_AREA)
+        sti = os.path.join(mappe, navn)
         cv2.imwrite(sti, ny)
         sys.stderr.write("skalerte %dx%d -> %dx%d for tekstlesinga\n"
                          % (w, h, ny.shape[1], ny.shape[0]))
@@ -162,10 +163,16 @@ def _kjor_igjen(kommando):
 
 
 def les_tekst(bilde: str, mappe: str):
-    """Kjoerer Audiveris paa bildet og graver MusicXML-en ut av .mxl-fila.
+    """Leser teksten paa arket, og proever flere maalestokker.
 
     Gir (xml, None) naar det gikk, og (None, grunn) ellers. Ingen
     unntak slipper ut: at teksten mangler skal aldri felle notene.
+
+    Hvorfor flere stoerrelser: Audiveris finner notelinjeavstanden selv,
+    men er foelsom for hvor i spennet man havner. Paa 1700 px ble den
+    drept av kjernen hver gang; paa 2600 px kommer den gjennom. Mellom
+    arkene varierer det hvilken stoerrelse som bærer helt fram, og én
+    omgang til koster bare noen titalls sekunder — mot ingen tekst.
 
     Den kjoerer ETTER homr, ikke samtidig. Parallelt ville spart noe tid
     naa som instansen har to kjerner, men da maa modellene til homr og
@@ -174,9 +181,28 @@ def les_tekst(bilde: str, mappe: str):
     """
     if not os.path.exists(AUDIVERIS):
         return None, "Audiveris er ikke installert"
-    ut = os.path.join(mappe, "aud")
-    os.makedirs(ut, exist_ok=True)
-    bilde = skaler_for_tekst(bilde, mappe)
+
+    frist = time.monotonic() + AUDIVERIS_FRIST
+    grunner = []
+    for i, bredde in enumerate(BREDDER):
+        if i and time.monotonic() > frist:
+            grunner.append("ikke tid til %d px" % bredde)
+            break
+        ut = os.path.join(mappe, "aud%d" % i)
+        os.makedirs(ut, exist_ok=True)
+        stor = skaler_for_tekst(bilde, mappe, bredde, "stor%d.png" % i)
+        xml, grunn = _ett_forsok(stor, ut, mappe,
+                                 max(60, frist - time.monotonic()))
+        if xml:
+            if i:
+                sys.stderr.write("teksten kom foerst ved %d px\n" % bredde)
+            return xml, None
+        grunner.append("%d px: %s" % (bredde, grunn))
+    return None, " ⟋ ".join(grunner)[:900]
+
+
+def _ett_forsok(bilde: str, ut: str, mappe: str, frist: float):
+    """Ett Audiveris-forsoek paa ett bilde. Gir (xml, grunn)."""
     # «-save» koster nesten ingenting her, og gir oss bokfila aa falle
     # tilbake paa: naar transkripsjonen ikke naar helt fram, nekter
     # Audiveris aa eksportere i det hele tatt — «Error in reaching step
@@ -203,14 +229,14 @@ def les_tekst(bilde: str, mappe: str):
     maaler = threading.Thread(target=maal, daemon=True)
     maaler.start()
     try:
-        logg = proc.communicate(timeout=AUDIVERIS_FRIST)[0] or ""
+        logg = proc.communicate(timeout=frist)[0] or ""
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        return None, "Audiveris brukte mer enn %d s (%s)" % (
-            AUDIVERIS_FRIST, minnebilde(topp[0]))
+        return None, "brukte mer enn %d s (%s)" % (
+            round(frist), minnebilde(topp[0]))
     except Exception as e:                          # noqa: BLE001
-        return None, "Audiveris feilet: %s" % e
+        return None, "feilet: %s" % e
     finally:
         stopp.set()
 
@@ -231,7 +257,7 @@ def les_tekst(bilde: str, mappe: str):
             with open(os.path.join(mappe, f), errors="replace") as fh:
                 sys.stderr.write("── %s ──\n%s\n" % (f, fh.read()[:4000]))
         linjer = [l.strip() for l in logg.splitlines() if l.strip()]
-        return None, "Audiveris ble drept av signal %d (%s)%s. Siste: %s" % (
+        return None, "drept av signal %d (%s)%s. Siste: %s" % (
             -proc.returncode, minnebilde(topp[0]),
             (", hs_err: " + ", ".join(krasj)) if krasj else "",
             " | ".join(linjer[-3:])[:300])
@@ -270,8 +296,8 @@ def les_tekst(bilde: str, mappe: str):
         linjer = [l.strip() for l in logg.splitlines() if l.strip()]
         sier = [l for l in linjer if ("WARN" in l or "ERROR" in l
                                       or "Exception" in l or "Caused by" in l)]
-        return None, ("Audiveris (kode %s) eksporterte ingenting. "
-                      % proc.returncode) + " | ".join((sier or linjer)[-4:])[:400]
+        return None, ("kode %s, ingenting eksportert. "
+                      % proc.returncode) + " | ".join((sier or linjer)[-3:])[:260]
 
     fil = sorted(traff)[0]
     try:
