@@ -11,8 +11,8 @@
 # Begge kjoerer paa samme bilde, og Worker-en legger tekstlesinga over
 # notelesinga. Se worker/src/import.js.
 #
-# Imaget blir rundt 1,8 GB. Grensa er instansens diskplass: 12 GB paa
-# standard-2, saa det er god plass.
+# Imaget blir rundt 2 GB. Grensa er instansens diskplass: 16 GB paa
+# standard-3, saa det er god plass.
 
 FROM python:3.12-slim
 

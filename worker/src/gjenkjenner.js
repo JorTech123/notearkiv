@@ -72,9 +72,19 @@ export class Notegjenkjenner extends DurableObject {
     // venter man paa noe som aldri ble startet.
     for (let forsok = 0; Date.now() < frist; forsok++) {
       if (!c.running) {
+        // «standard-3» fordi BEGGE leserne skal faa plass. homr holder
+        // modellene sine i minnet saa lenge containeren lever, og naar
+        // Audiveris saa ber om sitt, tar kjernen den ene av dem:
+        //
+        //   Audiveris ble drept av signal 9
+        //
+        // Paa 6 GiB (standard-2) skjedde det hver gang. 8 GiB holder,
+        // og de to kjernene gjoer lesinga raskere paa kjoepet.
+        //
         // Etter en stund forsoekes en mindre stoerrelse. Den er lettere
-        // aa finne plass til, og en halv kjerne er bedre enn ingenting.
-        const storrelse = forsok < 8 ? 'standard-2' : 'standard-1';
+        // aa finne plass til, og noter uten tekst er bedre enn
+        // ingenting — det er nettopp det som skjer paa den minste.
+        const storrelse = forsok < 8 ? 'standard-3' : 'standard-2';
         try {
           c.start({ image: c.images.base, instance: storrelse, enableInternet: false });
           // monitor() avvises naar oppstarten ikke lykkes, og avvisninga
