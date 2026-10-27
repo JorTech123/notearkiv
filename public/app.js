@@ -93,6 +93,33 @@
     });
   }
 
+  /** Har stykket sangtekst noe sted i det hele tatt? */
+  function harSangtekst(stykke) {
+    var noter = stykke.noter || {};
+    for (var navn in noter) {
+      var liste = noter[navn] || [];
+      for (var i = 0; i < liste.length; i++) if (liste[i].tekst) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Linja som sier fra naar et stykke staar uten sangtekst.
+   *
+   * Uten den ser et stykke uten ord ut som en feil i appen, og man vet
+   * ikke om det er noe som mangler eller noe som gikk galt. Grunnen
+   * ligger i katalogen, skrevet om til vanlig spraak av Worker-en.
+   */
+  function tekstmerknad(stykke) {
+    if (stykke.venter) return null;             // tonene er ikke lest ennaa
+    if (!stykke.noter || !Object.keys(stykke.noter).length) return null;
+    if (harSangtekst(stykke)) return null;
+    var mangler = ((stykke.tekst || {}).mangler || [])[0];
+    return mangler && mangler.hvorfor
+      ? 'uten sangtekst — ' + mangler.hvorfor
+      : 'uten sangtekst';
+  }
+
   function tegnListe(sok) {
     var q = (sok || '').toLowerCase().trim();
     var liste = el('liste');
@@ -174,7 +201,8 @@
     }
     el('leser-under').textContent =
       [stykke.toneart, stykke.antallSider + ' sider', stykke.antallTakter + ' takter',
-       stykke.venter ? 'tonene er ikke lest ennå' : null]
+       stykke.venter ? 'tonene er ikke lest ennå' : null,
+       tekstmerknad(stykke)]
         .filter(Boolean).join(' · ');
 
     tegnSider();

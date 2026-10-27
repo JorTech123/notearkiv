@@ -59,6 +59,25 @@ function stemmerFra(sider) {
   return sett;
 }
 
+/**
+ * Gjoer tekstleserens feilmelding om til noe en sanger kan lese.
+ *
+ * Den raa meldinga er Java-logg — «Error in reaching step PAGE»,
+ * stacksport, utfallskoder. Den hoerer hjemme i containerloggen, ikke i
+ * appen. Her staar det hva det betyr for deg: om det er arket som er
+ * vanskelig, eller noe som gikk galt paa veien.
+ */
+function forklarTekst(raa) {
+  const t = String(raa || '');
+  if (/ikke installert/i.test(t)) return 'tekstleseren mangler paa serveren';
+  if (/drept av signal/i.test(t)) return 'tekstlesinga stoppet braatt';
+  if (/brukte mer enn|for lang tid/i.test(t)) return 'tekstlesinga brukte for lang tid';
+  if (/reaching step|Error in export|eksportert|eksporterte/i.test(t)) {
+    return 'tekstleseren fikk ikke lest noter paa denne sida';
+  }
+  return 'tekstlesinga kom ikke gjennom';
+}
+
 function slugg(s) {
   return s
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -256,6 +275,13 @@ export default {
         // Sidene, stemmenavnene og resten av oppfoeringa beholdes; bare
         // tonene kommer til.
         const oppdatert = Object.assign({}, stykke, {
+          // Hvor mye tekst som kom med, og hvorfor den eventuelt ikke
+          // gjorde det. Et stykke uten sangtekst ser ut som en feil i
+          // appen hvis ingenting sier noe; her staar det.
+          tekst: {
+            ord: lest.ord || 0,
+            mangler: utenTekst.map((u) => ({ nr: u.nr, hvorfor: forklarTekst(u.hvorfor) })),
+          },
           noter: lest.noter,
           slagPerTakt: lest.slagPerTakt,
           antallTakter: Math.max(stykke.antallTakter || 0, lest.antallTakter || 0),
