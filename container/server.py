@@ -115,10 +115,10 @@ def les_tekst(bilde: str, mappe: str):
     Gir (xml, None) naar det gikk, og (None, grunn) ellers. Ingen
     unntak slipper ut: at teksten mangler skal aldri felle notene.
 
-    Den kjoerer ETTER homr, ikke samtidig. Instansen har én vCPU, saa
-    to CPU-tunge oppgaver ved siden av hverandre tar like lang tid
-    samlet som etter hverandre — men krever minnet til begge paa én
-    gang. Og det er nok til at kjernen rydder bort den ene midt i.
+    Den kjoerer ETTER homr, ikke samtidig. Parallelt ville spart noe tid
+    naa som instansen har to kjerner, men da maa modellene til homr og
+    hele Java-kjoeretiden ligge i minnet paa én gang — og den ene blir
+    ryddet bort midt i. Noen sekunder er ikke verdt det.
     """
     if not os.path.exists(AUDIVERIS):
         return None, "Audiveris er ikke installert"
@@ -160,9 +160,22 @@ def les_tekst(bilde: str, mappe: str):
     # det staar det ingen feilmelding om noe sted — tallene er det
     # eneste sporet.
     if proc.returncode is not None and proc.returncode < 0:
+        # HELE loggen til stderr. Audiveris sin utdata fanges av
+        # Popen og naar ellers aldri containerloggen, saa vi staar
+        # igjen med de tre siste linjene og ingen mulighet til aa se
+        # hva som faktisk skjedde. Her gaar den dit vi kan lese den.
+        sys.stderr.write("── Audiveris doede (signal %d). Hele loggen: ──\n%s\n──\n"
+                         % (-proc.returncode, logg))
+        # Et JVM-krasj legger igjen en hs_err-fil. Finnes den, er det
+        # ikke kjernen som tok den, men Java som falt sammen selv.
+        krasj = [f for f in os.listdir(mappe) if f.startswith("hs_err")]
+        for f in krasj:
+            with open(os.path.join(mappe, f), errors="replace") as fh:
+                sys.stderr.write("── %s ──\n%s\n" % (f, fh.read()[:4000]))
         linjer = [l.strip() for l in logg.splitlines() if l.strip()]
-        return None, "Audiveris ble drept av signal %d (%s). Siste: %s" % (
+        return None, "Audiveris ble drept av signal %d (%s)%s. Siste: %s" % (
             -proc.returncode, minnebilde(topp[0]),
+            (", hs_err: " + ", ".join(krasj)) if krasj else "",
             " | ".join(linjer[-3:])[:300])
 
     traff = []

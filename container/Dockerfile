@@ -78,8 +78,14 @@ RUN mkdir -p /usr/local/share/tessdata \
 # -Xmx: Java tar som standard en fjerdedel av maskinens minne, og
 # modellene til homr ligger fortsatt i det samme minnet. To gigabyte
 # holder godt til ett ark, og da er det rikelig igjen til resten.
+#
+# ActiveProcessorCount/parallelism: Audiveris gaar parallelt fra og med
+# STEMS-steget, og det er NOEYAKTIG der den blir drept med signal 9 i
+# denne containeren — hver gang, med sju gigabyte ledig. Java sizer
+# traadpuljene og GC-traadene sine etter antall kjerner, saa her
+# holdes den til én.
 ENV TESSDATA_PREFIX=/usr/local/share/tessdata \
-    JAVA_TOOL_OPTIONS="-Djava.util.Arrays.useLegacyMergeSort=true -Djava.awt.headless=true -Xmx2g"
+    JAVA_TOOL_OPTIONS="-Djava.util.Arrays.useLegacyMergeSort=true -Djava.awt.headless=true -Xmx2g -XX:ActiveProcessorCount=1 -Djava.util.concurrent.ForkJoinPool.common.parallelism=1"
 
 WORKDIR /app
 COPY server.py /app/server.py
