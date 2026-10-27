@@ -202,7 +202,16 @@ class Behandler(BaseHTTPRequestHandler):
                         or "usage" in ut.lower()
                     )
                     svar["kode"] = r.returncode
-                    svar["utdrag"] = ut[-500:]
+                    # Linjene som NAVNGIR feilen, ikke de siste. Et
+                    # Java-spor er stort sett rammeverk; det eneste som
+                    # sier noe er unntakslinjene oeverst, og de blir
+                    # borte om man bare tar halen.
+                    viktig = [l.strip() for l in ut.splitlines()
+                              if ("Exception" in l or "Error" in l
+                                  or l.startswith("Caused by")
+                                  or "Unable" in l or "Cannot" in l)]
+                    svar["feillinjer"] = viktig[:8]
+                    svar["utdrag"] = ut[:400]
                 except Exception as e:              # noqa: BLE001
                     svar["utdrag"] = str(e)
             else:
