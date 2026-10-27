@@ -57,9 +57,8 @@ export class Notegjenkjenner extends DurableObject {
       throw new Error('ctx.container.images.base mangler — sjekk at containers[] i wrangler.jsonc har scheduling_policy "durable_object" og et images-kart');
     }
 
-    const port = c.getTcpPort(PORT);
     const frist = Date.now() + KLAR_INNEN;
-    let sist = 'ikke startet';
+    const sett = new Set();
 
     // start() MAA kunne forsoekes om igjen. Plattformen har ikke alltid
     // en maskin aa gi med en gang:
@@ -86,9 +85,15 @@ export class Notegjenkjenner extends DurableObject {
             (feil) => console.log('notegjenkjenneren startet ikke:', feil && feil.message),
           ));
         } catch (e) {
-          sist = e.message;
+          sett.add('start: ' + e.message);
         }
       }
+
+      // Porten hentes paa nytt ved hvert forsoek. Hentes den én gang
+      // foer containeren finnes, peker den paa en instans som aldri kom
+      // opp, og den fortsetter aa svare «ingen instans» lenge etter at
+      // en ny er oppe og lytter.
+      const port = c.getTcpPort(PORT);
 
       // start() er ferdig lenge foer containeren svarer paa noe. Den har
       // en «/oppe» som svarer naar modellene er lastet, saa vi banker
@@ -102,14 +107,17 @@ export class Notegjenkjenner extends DurableObject {
           await c.setInactivityTimeout(SOVNER_ETTER);
           return port;
         }
-        sist = `svarte ${svar.status}`;
+        sett.add(`/oppe svarte ${svar.status}`);
       } catch (e) {
-        sist = e.message;
+        sett.add(e.message);
       }
 
       await scheduler.wait(Math.min(400 * (forsok + 1), 3000));
     }
-    throw new Error(`containeren ble ikke klar paa ${KLAR_INNEN / 1000}s (${sist})`);
+    // ALLE de ulike feilene tas med, ikke bare den siste. Oppstart gaar
+    // gjennom flere tilstander — ingen instans, ingen som lytter ennaa,
+    // modellene lastes — og med bare den siste ser de helt like ut.
+    throw new Error(`containeren ble ikke klar paa ${KLAR_INNEN / 1000}s: ${[...sett].join(' | ')}`);
   }
 
   /** Leser ett bilde og gir MusicXML tilbake. */
