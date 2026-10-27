@@ -29,6 +29,7 @@ import socketserver
 import subprocess
 import sys
 import tempfile
+import threading
 import traceback
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,8 +51,41 @@ SPRAAK = os.environ.get("NOTE_SPRAAK", "nor+eng")
 AUDIVERIS_FRIST = int(os.environ.get("NOTE_TEKSTFRIST", "240"))
 
 
-def minnebilde() -> str:
-    """Hvor mye minne maskinen har, og hvor mye denne prosessen holder."""
+def _les_tall(sti, deler=1):
+    try:
+        with open(sti) as f:
+            return int(f.read().strip()) // deler
+    except Exception:                               # noqa: BLE001
+        return None
+
+
+def cgroup_grense():
+    """Containerens EGEN minnegrense, i MB.
+
+    /proc/meminfo viser maskinen, ikke containeren — den er ikke delt
+    opp per container. Blir vi drept for aa bruke for mye, er det denne
+    grensa som gjelder, og da hjelper det ikke aa se at maskinen har
+    rikelig igjen.
+    """
+    for sti in ("/sys/fs/cgroup/memory.max",
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        n = _les_tall(sti, 1048576)
+        if n is not None:
+            return n
+    return None
+
+
+def _brukt_naa():
+    for sti in ("/sys/fs/cgroup/memory.current",
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes"):
+        n = _les_tall(sti, 1048576)
+        if n is not None:
+            return n
+    return None
+
+
+def minnebilde(topp=None) -> str:
+    """Minnebildet, med containerens egen grense foerst."""
     tall = {}
     try:
         with open("/proc/meminfo") as f:
@@ -68,9 +102,11 @@ def minnebilde() -> str:
                     tall["homr"] = int(linje.split()[1]) // 1024
     except Exception:                               # noqa: BLE001
         pass
-    return "maskin %s MB, ledig %s MB, homr holder %s MB" % (
-        tall.get("MemTotal", "?"), tall.get("MemAvailable", "?"),
-        tall.get("homr", "?"))
+    return ("cgroup-grense %s MB, toppbruk %s MB, maskin %s MB, "
+            "ledig %s MB, homr holder %s MB" % (
+                cgroup_grense(), topp if topp is not None else "?",
+                tall.get("MemTotal", "?"), tall.get("MemAvailable", "?"),
+                tall.get("homr", "?")))
 
 
 def les_tekst(bilde: str, mappe: str):
@@ -95,24 +131,39 @@ def les_tekst(bilde: str, mappe: str):
          "--", bilde],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
+    # Maaler MENS den kjoerer. Et minnebilde tatt etterpaa viser bare at
+    # alt er ledig igjen — den som brukte det, er jo borte.
+    topp = [0]
+    stopp = threading.Event()
+
+    def maal():
+        while not stopp.wait(0.5):
+            n = _brukt_naa()
+            if n and n > topp[0]:
+                topp[0] = n
+
+    maaler = threading.Thread(target=maal, daemon=True)
+    maaler.start()
     try:
         logg = proc.communicate(timeout=AUDIVERIS_FRIST)[0] or ""
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        return None, "Audiveris brukte mer enn %d s" % AUDIVERIS_FRIST
+        return None, "Audiveris brukte mer enn %d s (%s)" % (
+            AUDIVERIS_FRIST, minnebilde(topp[0]))
     except Exception as e:                          # noqa: BLE001
         return None, "Audiveris feilet: %s" % e
+    finally:
+        stopp.set()
 
-    # Negativ utfallskode betyr drept av et signal. -9 er SIGKILL, som
-    # her stort sett betyr at kjernen tok den for aa frigjoere minne —
-    # og da staar det ingen feilmelding noe sted.
+    # Negativ utfallskode betyr drept av et signal. -9 er SIGKILL, og
+    # det staar det ingen feilmelding om noe sted — tallene er det
+    # eneste sporet.
     if proc.returncode is not None and proc.returncode < 0:
-        # Tallene MAA med. Signal 9 er stort sett kjernen som rydder,
-        # og da staar det ingenting i noen logg om hvor mye som manglet
-        # — man blir staaende og gjette paa instansstoerrelsen.
-        return None, "Audiveris ble drept av signal %d (%s)" % (
-            -proc.returncode, minnebilde())
+        linjer = [l.strip() for l in logg.splitlines() if l.strip()]
+        return None, "Audiveris ble drept av signal %d (%s). Siste: %s" % (
+            -proc.returncode, minnebilde(topp[0]),
+            " | ".join(linjer[-3:])[:300])
 
     traff = []
     for rot, _, filer in os.walk(ut):
