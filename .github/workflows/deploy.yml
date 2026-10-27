@@ -1,0 +1,47 @@
+# Bygger containeren og ruller ut notearkivet.
+#
+# Hvorfor dette finnes i stedet for Cloudflare Workers Builds:
+# containeren maa bygges med Docker foer den kan rulles ut, og
+# Cloudflares eget byggemiljoe har ingen Docker:
+#
+#   «The Docker CLI is needed to build the configured image before
+#    deploying but could not be launched.»
+#
+# GitHub sine kjoerere har Docker installert. Derfor bygges og rulles
+# alt ut herfra i stedet.
+#
+# Krever to hemmeligheter i repoet (Settings -> Secrets and variables
+# -> Actions):
+#   CLOUDFLARE_API_TOKEN   et token med «Edit Cloudflare Workers»
+#   CLOUDFLARE_ACCOUNT_ID  3dd864ed35c5a0e46b240c4fe0a7e39f
+
+name: Rull ut notearkivet
+
+on:
+  push:
+    branches: [main]
+  # Lar deg kjoere den manuelt fra Actions-fanen uten aa pushe noe.
+  workflow_dispatch:
+
+jobs:
+  rull-ut:
+    runs-on: ubuntu-latest
+    # Foerste bygg henter 150 MB modellvekter inn i imaget.
+    timeout-minutes: 60
+
+    steps:
+      - name: Hent koden
+        uses: actions/checkout@v6
+
+      - name: Vis at Docker finnes
+        run: docker version --format 'Docker {{.Server.Version}}'
+
+      - name: Installer avhengigheter
+        run: npm ci --no-audit --no-fund
+
+      - name: Bygg containeren og rull ut
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
