@@ -73,7 +73,10 @@ jobs:
           fi
           case "$verktoy" in
             *'"audiveris": true'*|*'"audiveris":true'*) ;;
-            *) echo "::error::Tekstleseren (Audiveris) starter ikke. Ingenting rulles ut."
+            *) # Svaret MAA staa i selve feilmeldinga. Byggeloggen her
+               # krever innlogging aa lese, mens annotasjonen er aapen —
+               # uten dette ser man bare at det feilet, ikke hvorfor.
+               echo "::error::Tekstleseren (Audiveris) starter ikke: $(echo "$verktoy" | tr '\n' ' ' | cut -c1-700)"
                exit 1 ;;
           esac
           echo "Begge leserne svarer. Ruller ut."

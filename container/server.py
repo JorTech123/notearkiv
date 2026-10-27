@@ -191,8 +191,18 @@ class Behandler(BaseHTTPRequestHandler):
                 try:
                     r = subprocess.run([AUDIVERIS, "-batch", "-help"],
                                        capture_output=True, text=True, timeout=180)
-                    svar["audiveris"] = r.returncode == 0
-                    svar["utdrag"] = ((r.stdout or "") + (r.stderr or "")).strip()[-400:]
+                    ut = ((r.stdout or "") + (r.stderr or "")).strip()
+                    # Utfallskoden duger ikke alene: mange kommandolinje-
+                    # verktoey gir 1 paa «-help». Det vi trenger aa vite
+                    # er om Java-en kom i gang og APPEN svarte, og det
+                    # ser vi paa at den skriver sin egen bruksanvisning.
+                    svar["audiveris"] = (
+                        r.returncode == 0
+                        or "-transcribe" in ut
+                        or "usage" in ut.lower()
+                    )
+                    svar["kode"] = r.returncode
+                    svar["utdrag"] = ut[-500:]
                 except Exception as e:              # noqa: BLE001
                     svar["utdrag"] = str(e)
             else:
