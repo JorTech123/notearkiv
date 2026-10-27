@@ -49,6 +49,8 @@ SPRAAK = os.environ.get("NOTE_SPRAAK", "nor+eng")
 # noter uten tekst er mye bedre enn ingen noter — saa den faar en frist
 # og blir forlatt om den ikke rekker det.
 AUDIVERIS_FRIST = int(os.environ.get("NOTE_TEKSTFRIST", "240"))
+# Bredden sida forstoerres til foer tekstlesinga. Se skaler_for_tekst.
+AUDIVERIS_BREDDE = int(os.environ.get("NOTE_TEKSTBREDDE", "2600"))
 
 
 def _les_tall(sti, deler=1):
@@ -109,6 +111,41 @@ def minnebilde(topp=None) -> str:
                 tall.get("homr", "?")))
 
 
+def skaler_for_tekst(bilde: str, mappe: str) -> str:
+    """Forstoerrer sida foer Audiveris faar den.
+
+    Audiveris finner notelinjeavstanden selv, men bare innenfor et
+    rimelig spenn. En telefonskanning som er skalert ned til 1700 px
+    har rundt ti piksler mellom notelinjene, og da blir alt trangt:
+    notehoder, stilker og stoey ligner paa hverandre.
+
+    Det er ogsaa den ENE forskjellen fra veien som virker paa samme
+    side lokalt — der tegnes arket opp i 2600 px foer Audiveris leser
+    det. Her gjoeres det samme.
+
+    homr faar fortsatt originalen: den har sin egen oppskalering, og
+    har ingen glede av vaar.
+    """
+    try:
+        import cv2
+        img = cv2.imread(bilde, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return bilde
+        h, w = img.shape[:2]
+        if w <= 0 or w >= AUDIVERIS_BREDDE:
+            return bilde
+        ny = cv2.resize(img, (AUDIVERIS_BREDDE, round(h * AUDIVERIS_BREDDE / w)),
+                        interpolation=cv2.INTER_LANCZOS4)
+        sti = os.path.join(mappe, "stor.png")
+        cv2.imwrite(sti, ny)
+        sys.stderr.write("skalerte %dx%d -> %dx%d for tekstlesinga\n"
+                         % (w, h, ny.shape[1], ny.shape[0]))
+        return sti
+    except Exception as e:                          # noqa: BLE001
+        sys.stderr.write("kunne ikke skalere: %s\n" % e)
+        return bilde
+
+
 def les_tekst(bilde: str, mappe: str):
     """Kjoerer Audiveris paa bildet og graver MusicXML-en ut av .mxl-fila.
 
@@ -124,6 +161,7 @@ def les_tekst(bilde: str, mappe: str):
         return None, "Audiveris er ikke installert"
     ut = os.path.join(mappe, "aud")
     os.makedirs(ut, exist_ok=True)
+    bilde = skaler_for_tekst(bilde, mappe)
     proc = subprocess.Popen(
         [AUDIVERIS, "-batch", "-transcribe", "-export", "-output", ut,
          "-option",
