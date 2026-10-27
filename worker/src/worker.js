@@ -215,12 +215,18 @@ export default {
         const feilet = [];
         for (const side of stykke.sider) {
           const fil = await L.lesFil(String(side.fil || '').replace(/^fil\//, ''));
-          if (!fil) { feilet.push(side.nr); continue; }
+          if (!fil) {
+            feilet.push({ nr: side.nr, hvorfor: 'sida ligger ikke i lageret' });
+            continue;
+          }
           try {
             const tekst = await lesSide(env, id, await new Response(fil.body).arrayBuffer(), fil.type);
             xml.push(new TextEncoder().encode(tekst));
           } catch (e) {
-            feilet.push(side.nr);
+            // Aarsaken MAA med. Gjenkjenneren svarer med sin egen
+            // feilmelding i kroppen, og uten den staar man igjen med
+            // «fikk ingen toner» og ingen vei videre.
+            feilet.push({ nr: side.nr, hvorfor: e.message });
           }
         }
         if (!xml.length) {
@@ -302,8 +308,13 @@ export default {
         // Skanneren har allerede kjoert strukturanalysen paa telefonen og
         // sender den med her, saa Worker-en bare tar imot og teller opp.
         const sider = [];
+        const mangler = [];
         for (let nr = 1; nr <= (kropp.antallSider || 0); nr++) {
           const s = (kropp.sider || [])[nr - 1] || {};
+          if (!(await L.finnesFil(`${id}/side-${String(nr).padStart(3, '0')}.jpg`))) {
+            mangler.push(nr);
+            continue;
+          }
           sider.push({
             nr,
             fil: `fil/${id}/side-${String(nr).padStart(3, '0')}.jpg`,
@@ -313,6 +324,15 @@ export default {
             systemer: s.systemer || [],
             antallTakter: s.antallTakter || 0,
           });
+        }
+        // Et partitur som mangler en side midt i, men nummererer resten
+        // fortloepende, ser helt i orden ut i appen. Da er en feil
+        // brukeren kan gjoere noe med langt bedre enn et stille hull.
+        if (mangler.length) {
+          return svar({
+            feil: `Disse sidene kom ikke opp: ${mangler.join(', ')}. Skann stykket paa nytt.`,
+            mangler,
+          }, 409);
         }
         const stemmer = kropp.stemmer && kropp.stemmer.length
           ? kropp.stemmer
@@ -329,7 +349,10 @@ export default {
           // hundre megabyte. Merket forteller baade visningen og
           // behandlingsverktoeyet at dette stykket staar i koe.
           venter: 'gjenkjenning',
-          pdf: kropp.harPdf ? `fil/${id}/noter.pdf` : null,
+          // Ikke «kropp.harPdf»: klienten melder at den lastet opp en
+          // PDF ogsaa naar opplastinga svarte 500, og da staar det en
+          // lenke i katalogen som gir 404. Vi spoer lageret i stedet.
+          pdf: (await L.finnesFil(`${id}/noter.pdf`)) ? `fil/${id}/noter.pdf` : null,
           sider,
         };
         await L.lagreStykke(stykke);

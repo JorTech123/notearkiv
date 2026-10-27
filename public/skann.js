@@ -570,6 +570,11 @@
               method: 'POST',
               headers: { 'content-type': 'image/jpeg' },
               body: side.blob,
+            }).then(function (r) {
+              // fetch avviser bare paa nettverksfeil. Uten denne
+              // sjekken gaar en side som svarte 500 videre som om den
+              // laa trygt oppe, og stykket blir lagret med et hull.
+              if (!r.ok) throw new Error('Side ' + (i + 1) + ' ble ikke lagret (' + r.status + ')');
             });
           });
         }, Promise.resolve());
@@ -585,7 +590,7 @@
           method: 'POST',
           headers: { 'content-type': 'application/pdf' },
           body: pdf,
-        }).then(function () { return true; });
+        }).then(function (r) { return r.ok; });
       })
       .then(function (harPdf) {
         framdrift('Fullfører…', 0.97);

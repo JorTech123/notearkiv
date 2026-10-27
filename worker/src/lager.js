@@ -66,6 +66,18 @@ export function lager(env) {
     },
 
     /**
+     * Sier om en fil faktisk ligger der, uten aa hente bytene.
+     *
+     * Brukes foer katalogen peker paa noe: en katalog som lover en fil
+     * som ikke finnes, gir 404 i appen uten at noe sier fra. Det har
+     * skjedd to ganger alt — en gang paa feil noekkel, en gang fordi en
+     * opplasting feilet stille.
+     */
+    async finnesFil(nokkel) {
+      return (await env.FILER.head(nokkel)) !== null;
+    },
+
+    /**
      * Henter en fil. Returnerer kroppen som stroem, saa store PDF-er
      * aldri samles i minnet i Worker-en.
      */

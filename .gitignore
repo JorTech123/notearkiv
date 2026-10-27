@@ -23,3 +23,7 @@ Thumbs.db
 
 # Personlige innstillinger for denne maskinen.
 .claude/settings.local.json
+
+# Python-rester fra lokale syntakssjekker
+__pycache__/
+*.pyc

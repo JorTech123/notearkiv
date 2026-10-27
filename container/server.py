@@ -73,19 +73,47 @@ class Behandler(BaseHTTPRequestHandler):
         else:
             self._svar(404, "ukjent")
 
+    def _les_kropp(self):
+        """Leser kroppen enten den har content-length eller er chunked.
+
+        BaseHTTPRequestHandler kan bare det foerste. Worker-en sender
+        content-length naar kroppen er en ArrayBuffer, men chunked saa
+        snart den er en stroem — og da ville vi lest null bytes og
+        avvist et helt gyldig bilde.
+        """
+        if "chunked" in (self.headers.get("transfer-encoding") or "").lower():
+            biter = []
+            samlet = 0
+            while True:
+                linje = self.rfile.readline(64).strip()
+                storrelse = int(linje.split(b";")[0] or b"0", 16)
+                if storrelse == 0:
+                    self.rfile.readline()        # den avsluttende CRLF
+                    break
+                samlet += storrelse
+                if samlet > MAKS:
+                    raise ValueError("for stort bilde")
+                biter.append(self.rfile.read(storrelse))
+                self.rfile.readline()            # CRLF etter hver bit
+            return b"".join(biter)
+
+        lengde = int(self.headers.get("content-length") or 0)
+        if lengde <= 0 or lengde > MAKS:
+            raise ValueError("mangler eller for stort bilde")
+        return self.rfile.read(lengde)
+
     def do_POST(self):
         if not self.path.startswith("/les"):
             self._svar(404, "ukjent")
             return
         try:
-            lengde = int(self.headers.get("content-length") or 0)
-        except ValueError:
-            lengde = 0
-        if lengde <= 0 or lengde > MAKS:
-            self._svar(400, "mangler eller for stort bilde")
+            bytes_inn = self._les_kropp()
+        except ValueError as e:
+            self._svar(400, str(e))
             return
-
-        bytes_inn = self.rfile.read(lengde)
+        if not bytes_inn:
+            self._svar(400, "tom kropp")
+            return
         type_ = (self.headers.get("content-type") or "").lower()
         endelse = ".png" if "png" in type_ else ".jpg"
 
@@ -93,7 +121,11 @@ class Behandler(BaseHTTPRequestHandler):
             xml = les_noter(bytes_inn, endelse)
         except Exception as e:                      # noqa: BLE001
             traceback.print_exc()
-            self._svar(500, "kunne ikke lese noten: %s" % e)
+            # De nederste linjene i sporet staar ogsaa i svaret, ikke
+            # bare i containerloggen. Worker-en sender dem videre, og da
+            # ser man aarsaken i stedet for «kunne ikke lese noten».
+            spor = "".join(traceback.format_exc().splitlines(True)[-4:]).strip()
+            self._svar(500, "kunne ikke lese noten: %s\n%s" % (e, spor))
             return
 
         self._svar(200, xml, "application/vnd.recordare.musicxml+xml; charset=utf-8")

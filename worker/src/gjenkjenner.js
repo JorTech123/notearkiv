@@ -104,7 +104,7 @@ export class Notegjenkjenner extends DurableObject {
     });
     const tekst = await svar.text();
     if (!svar.ok) {
-      throw new Error(`gjenkjenneren svarte ${svar.status}: ${tekst.slice(0, 300)}`);
+      throw new Error(`gjenkjenneren svarte ${svar.status}: ${tekst.slice(0, 600)}`);
     }
     return tekst;
   }
