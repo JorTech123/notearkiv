@@ -9,7 +9,6 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@cloudflare/containers": "^0.3.7",
     "@napi-rs/canvas": "0.1.65",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "4.10.38",

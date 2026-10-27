@@ -37,6 +37,11 @@ function finnPdf(id) {
 function leggOpp(nokkel, fil, type) {
   execFileSync(process.execPath, [
     WRANGLER, 'r2', 'object', 'put', `${BOTTE}/${nokkel}`,
+    // «--remote» MAA staa der. Fra wrangler 4 skriver `r2 object put`
+    // til en lokal simulering som standard, og den melder suksess —
+    // filene havner i en mappe paa maskinen i stedet for i R2, og
+    // sidene blir 404 i appen uten at noe sier fra.
+    '--remote',
     '--file', fil, '--content-type', type, '--jurisdiction', 'eu',
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 }
@@ -54,7 +59,12 @@ async function main() {
   for (const stykke of katalog.stykker) {
     for (const side of stykke.sider) {
       // "fil/<id>/side-001.jpg" -> noekkelen er alt etter "fil/"
-      const nokkel = side.fil.replace(/^fil\//, '');
+      // Noekkelen regnes ut PAA SAMME MAATE som last-opp.js doeper den
+      // i katalogen. Den lokale `side.fil` peker paa byggemappa
+      // («sider/<id>-001.jpg») og er ikke noekkelen i R2 — leses den
+      // herfra, havner bildet et sted katalogen aldri slaar opp, og
+      // sida blir 404 selv om opplastinga meldte suksess.
+      const nokkel = `${stykke.id}/side-${String(side.nr).padStart(3, '0')}.jpg`;
       const lokal = path.join('data/ut/sider',
         `${stykke.id}-${String(side.nr).padStart(3, '0')}.jpg`);
       if (fs.existsSync(lokal)) jobber.push({ nokkel, lokal, type: 'image/jpeg' });

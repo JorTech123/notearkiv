@@ -198,11 +198,10 @@ export default {
       // Stemmenavnene brukeren oppga i skanneren beholdes — de staar
       // alt i katalogen, og containeren vet ingenting om dem.
       if (sti === '/api/gjenkjenn' && request.method === 'POST') {
-        // Containeren er skrevet og koblet, men slaas ikke paa foer
-        // Workers Paid og et bygget image er paa plass. Si det rett ut
-        // i stedet for aa feile uforstaaelig.
+        // Bindingen mangler bare om utrullinga ikke har naadd fram.
+        // Si det rett ut i stedet for aa feile uforstaaelig.
         if (!env.GJENKJENNER) {
-          return svar({ feil: 'Notegjenkjenneren er ikke slaatt paa ennaa. Se container/wrangler-tillegg.jsonc.' }, 503);
+          return svar({ feil: 'Notegjenkjenneren er ikke rullet ut. Se containers[] i wrangler.jsonc.' }, 503);
         }
         const { id } = await request.json();
         if (!id) return svar({ feil: 'Mangler id' }, 400);

@@ -24,17 +24,33 @@
   // 3,7 sekunder, som gir rundt 6000 sider i maaneden innenfor det
   // Workers Paid inkluderer.
   //
-  // Imaget bygges av Cloudflare Workers Builds fra dette lageret.
+  // Imaget bygges av GitHub Actions (.github/workflows/deploy.yml).
   // «wrangler deploy» herfra krever Docker lokalt og vil feile uten.
   "containers": [
     {
       "class_name": "Notegjenkjenner",
-      // Peker paa selve Dockerfilen, ikke mappa: wrangler avviser en
-      // katalog her. Byggekonteksten blir mappa fila ligger i, saa
-      // «COPY server.py» finner den fortsatt.
-      "image": "./container/Dockerfile",
-      "instance_type": "standard-2",
-      "max_instances": 3
+      // Kontoen her tillater bare denne policyen:
+      //
+      //   «This account cannot create applications with the "default"
+      //    scheduling policy. Use "durable_object" instead.»
+      //
+      // Den flytter valget av image og stoerrelse ut av denne fila og
+      // inn i koden — se container.start() i worker/src/gjenkjenner.js.
+      // «instance_type» og «max_instances» finnes ikke her da; antall
+      // instanser gaar mot kontogrensa i stedet.
+      //
+      // Policyen kan ikke endres etterpaa. Skal den byttes, maa
+      // applikasjonen slettes og lages paa nytt.
+      "scheduling_policy": "durable_object",
+      // Hvert navn her blir en egenskap paa ctx.container.images.
+      // Byggekonteksten er mappa, ikke rota: «COPY server.py» leter
+      // rett ved siden av Dockerfilen.
+      "images": {
+        "base": {
+          "dockerfile": "./container/Dockerfile",
+          "build_context": "./container"
+        }
+      }
     }
   ],
   "durable_objects": {

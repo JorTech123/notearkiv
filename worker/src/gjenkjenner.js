@@ -10,23 +10,104 @@
  *               modeller som ikke kan bo i en Worker, leser ett bilde,
  *               og sovner igjen.
  *
- * Den sover etter fem minutter uten arbeid. Da koster den ingenting —
- * du betaler bare for de sekundene den faktisk leser.
+ * Hvorfor dette er en vanlig DurableObject og ikke «Container»-klassen
+ * fra @cloudflare/containers: kontoen her tillater bare den ene
+ * planleggingspolicyen.
+ *
+ *   «This account cannot create applications with the "default"
+ *    scheduling policy. Use "durable_object" instead.»
+ *
+ * Og med «durable_object» velges image og instansstoerrelse av KODEN
+ * ved hver oppstart, ikke av wrangler.jsonc. Hjelpeklassen gjoer det
+ * motsatte — den regner med at konfigurasjonen bestemmer — saa oppstart,
+ * klarmelding og sovevindu staar her i stedet.
  */
 
-import { Container } from '@cloudflare/containers';
+import { DurableObject } from 'cloudflare:workers';
 
-export class Notegjenkjenner extends Container {
-  defaultPort = 8080;
+const PORT = 8080;
 
-  // Et notesett er flere sider som kommer rett etter hverandre. Holder
-  // vi den vaaken noen minutter, slipper side to og tre aa vente paa
-  // at modellene lastes paa nytt.
-  sleepAfter = '5m';
+// Et notesett er flere sider som kommer rett etter hverandre. Holder vi
+// containeren vaaken noen minutter, slipper side to og tre aa laste
+// modellene paa nytt. Etter det sovner den, og da koster den ingenting.
+const SOVNER_ETTER = 5 * 60 * 1000;
 
-  onStart() { console.log('notegjenkjenneren er oppe'); }
-  onStop() { console.log('notegjenkjenneren sovnet'); }
-  onError(feil) { console.log('notegjenkjenneren feilet:', feil); }
+// Kald oppstart laster 150 MB modellvekter fra containerens egen disk.
+// To minutter er slingringsmonn, ikke et maal.
+const KLAR_INNEN = 120000;
+
+export class Notegjenkjenner extends DurableObject {
+  /**
+   * Starter containeren om den sover, og gir tilbake porten naar den
+   * faktisk tar imot noe.
+   */
+  async vekk() {
+    const c = this.ctx.container;
+    if (!c) throw new Error('ingen container er koblet til Notegjenkjenner');
+
+    if (!c.running) {
+      // «images.base» er navnet fra containers[].images i
+      // wrangler.jsonc. Wrangler har alt bygget det og festet det til en
+      // digest; her velger vi bare hvilket av dem som skal kjoere.
+      //
+      // Kartet finnes bare under «durable_object»-policyen. Er det tomt,
+      // er det nesten alltid fordi utrullinga brukte det gamle
+      // «image»-feltet — en feil som ellers ville dukket opp som et
+      // uforstaaelig TypeError inne i start().
+      if (!c.images || !c.images.base) {
+        throw new Error('ctx.container.images.base mangler — sjekk at containers[] i wrangler.jsonc har scheduling_policy "durable_object" og et images-kart');
+      }
+      c.start({
+        image: c.images.base,
+        instance: 'standard-2',
+        enableInternet: false,
+      });
+      this.ctx.waitUntil(c.monitor().then(
+        () => console.log('notegjenkjenneren sovnet'),
+        (feil) => console.log('notegjenkjenneren stoppet:', feil),
+      ));
+    }
+
+    // Settes ved HVERT kall, ikke bare ved oppstart: etter en utrulling
+    // starter Durable Object-en uten sovevindu selv om containeren
+    // fortsatt gaar, og da ville den blitt ryddet bort med en gang.
+    await c.setInactivityTimeout(SOVNER_ETTER);
+
+    // start() er ferdig lenge foer containeren svarer paa noe. Den har en
+    // «/oppe» som svarer naar modellene er lastet, saa vi banker paa den
+    // i stedet for aa gjette paa en ventetid.
+    const port = c.getTcpPort(PORT);
+    const frist = Date.now() + KLAR_INNEN;
+    for (let forsok = 0; ; forsok++) {
+      let feil = null;
+      try {
+        const svar = await port.fetch('http://container/oppe');
+        if (svar.ok) return port;
+        feil = `svarte ${svar.status}`;
+      } catch (e) {
+        feil = e.message;
+      }
+      if (Date.now() > frist) {
+        throw new Error(`containeren ble ikke klar paa ${KLAR_INNEN / 1000}s (${feil})`);
+      }
+      await scheduler.wait(Math.min(250 * (forsok + 1), 2000));
+    }
+  }
+
+  /** Leser ett bilde og gir MusicXML tilbake. */
+  async les(bilde, type) {
+    const port = await this.vekk();
+    const svar = await port.fetch('http://container/les', {
+      method: 'POST',
+      headers: { 'content-type': type || 'image/jpeg' },
+      body: bilde,
+    });
+    const tekst = await svar.text();
+    if (!svar.ok) {
+      throw new Error(`gjenkjenneren svarte ${svar.status}: ${tekst.slice(0, 300)}`);
+    }
+    return tekst;
+  }
 }
 
 /**
@@ -37,15 +118,5 @@ export class Notegjenkjenner extends Container {
  */
 export async function lesSide(env, stykkeId, bilde, type) {
   const id = env.GJENKJENNER.idFromName('les:' + stykkeId);
-  const instans = env.GJENKJENNER.get(id);
-
-  const svar = await instans.fetch('http://container/les', {
-    method: 'POST',
-    headers: { 'content-type': type || 'image/jpeg' },
-    body: bilde,
-  });
-  if (!svar.ok) {
-    throw new Error(`gjenkjenneren svarte ${svar.status}: ${(await svar.text()).slice(0, 200)}`);
-  }
-  return await svar.text();
+  return await env.GJENKJENNER.get(id).les(bilde, type);
 }
