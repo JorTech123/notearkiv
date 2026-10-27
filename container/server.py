@@ -146,6 +146,21 @@ def skaler_for_tekst(bilde: str, mappe: str) -> str:
         return bilde
 
 
+def _kjor_igjen(kommando):
+    """Kjoerer Audiveris en gang til, kortere frist. Gir (logg, kode)."""
+    try:
+        p = subprocess.Popen(kommando, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
+        return (p.communicate(timeout=max(60, AUDIVERIS_FRIST // 2))[0] or "",
+                p.returncode)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+        return "andre forsoek brukte for lang tid", None
+    except Exception as e:                          # noqa: BLE001
+        return "andre forsoek feilet: %s" % e, None
+
+
 def les_tekst(bilde: str, mappe: str):
     """Kjoerer Audiveris paa bildet og graver MusicXML-en ut av .mxl-fila.
 
@@ -162,8 +177,13 @@ def les_tekst(bilde: str, mappe: str):
     ut = os.path.join(mappe, "aud")
     os.makedirs(ut, exist_ok=True)
     bilde = skaler_for_tekst(bilde, mappe)
+    # «-save» koster nesten ingenting her, og gir oss bokfila aa falle
+    # tilbake paa: naar transkripsjonen ikke naar helt fram, nekter
+    # Audiveris aa eksportere i det hele tatt — «Error in reaching step
+    # PAGE» — og da er en egen eksport fra den lagrede boka eneste vei
+    # til det den FAKTISK rakk aa lese. Se andre forsoek lenger nede.
     proc = subprocess.Popen(
-        [AUDIVERIS, "-batch", "-transcribe", "-export", "-output", ut,
+        [AUDIVERIS, "-batch", "-transcribe", "-save", "-export", "-output", ut,
          "-option",
          "org.audiveris.omr.text.Language.defaultSpecification=" + SPRAAK,
          "--", bilde],
@@ -216,15 +236,37 @@ def les_tekst(bilde: str, mappe: str):
             (", hs_err: " + ", ".join(krasj)) if krasj else "",
             " | ".join(linjer[-3:])[:300])
 
-    traff = []
-    for rot, _, filer in os.walk(ut):
-        for f in filer:
-            if f.lower().endswith((".mxl", ".musicxml", ".xml")):
-                traff.append(os.path.join(rot, f))
+    def finn(endelser):
+        traff = []
+        for rot, _, filer in os.walk(ut):
+            for f in filer:
+                if f.lower().endswith(endelser):
+                    traff.append(os.path.join(rot, f))
+        return sorted(traff)
+
+    traff = finn((".mxl", ".musicxml", ".xml"))
+
+    # ANDRE FORSOEK: eksporter fra den lagrede boka.
+    #
+    # Naar et ark ikke naar helt fram — «Error in reaching step PAGE» —
+    # nekter Audiveris aa eksportere i samme kjoering. Men stegene som
+    # gikk bra ligger i .omr-fila, og teksten leses tidlig. En egen
+    # eksport derfra gir oss derfor det den FAKTISK rakk aa lese, i
+    # stedet for ingenting.
+    if not traff:
+        bok = finn((".omr",))
+        if bok:
+            logg2, kode2 = _kjor_igjen(
+                [AUDIVERIS, "-batch", "-export", "-output", ut, "--", bok[0]])
+            logg = logg + "\n── andre forsoek (eksport fra bokfila) ──\n" + logg2
+            traff = finn((".mxl", ".musicxml", ".xml"))
+
     if not traff:
         # Audiveris melder «Created scores: []» uten feilkode naar den
         # ikke fant noter i det hele tatt. Linjene som sier noe er
         # WARN/ERROR, ikke den siste — den er som regel bare framdrift.
+        sys.stderr.write("── Audiveris eksporterte ingenting. Hele loggen: ──\n%s\n──\n"
+                         % logg)
         linjer = [l.strip() for l in logg.splitlines() if l.strip()]
         sier = [l for l in linjer if ("WARN" in l or "ERROR" in l
                                       or "Exception" in l or "Caused by" in l)]
