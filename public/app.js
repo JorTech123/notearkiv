@@ -93,6 +93,56 @@
     });
   }
 
+  /**
+   * «Les notene» for et stykke som bare er skannet.
+   *
+   * Skanninga lagrer sidene og merker stykket «venter»; selve lesinga
+   * skjer paa serveren og tar et par minutter. Blir den avbrutt — og en
+   * telefon som laaser seg avbryter den — staar stykket igjen som
+   * bilder. Da maa man kunne starte lesinga paa nytt uten aa skanne om
+   * igjen, og det er denne knappen.
+   */
+  function visLesKnapp(stykke) {
+    var spor = el('partiturspor');
+    spor.innerHTML = '';
+
+    var boks = document.createElement('div');
+    boks.className = 'les-noter';
+
+    var p = document.createElement('p');
+    p.textContent = 'Sidene er skannet, men tonene er ikke lest ennå.';
+    boks.appendChild(p);
+
+    var knapp = document.createElement('button');
+    knapp.className = 'knapp primaer';
+    knapp.textContent = 'Les notene';
+    knapp.onclick = function () {
+      knapp.disabled = true;
+      p.textContent = 'Leser… dette tar et par minutter. Du kan la skjermen stå på.';
+      fetch('/api/gjenkjenn', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: stykke.id }),
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        if (!res || !res.ok) throw new Error((res && res.feil) || 'lesinga kom ikke gjennom');
+        return fetch(BILDEROT + 'arkiv.json?' + Date.now())
+          .then(function (r) { return r.json(); });
+      }).then(function (data) {
+        arkiv = data;
+        var id = stykke.id;
+        var nytt = arkiv.stykker.find(function (x) { return x.id === id; });
+        tegnListe(el('sok') ? el('sok').value : '');
+        if (nytt) { S.stemme = 0; aapne(nytt); }
+      }).catch(function (e) {
+        knapp.disabled = false;
+        knapp.textContent = 'Prøv igjen';
+        p.textContent = e.message + '. Sidene ligger trygt — du mister ingenting.';
+      });
+    };
+    boks.appendChild(knapp);
+    spor.appendChild(boks);
+  }
+
   /** Har stykket sangtekst noe sted i det hele tatt? */
   function harSangtekst(stykke) {
     var noter = stykke.noter || {};
@@ -196,8 +246,8 @@
       valg.appendChild(o);
     });
     if (stykke.venter) {
-      el('partiturspor').innerHTML = '';
       el('partiturnokkel').hidden = true;
+      visLesKnapp(stykke);
     }
     el('leser-under').textContent =
       [stykke.toneart, stykke.antallSider + ' sider', stykke.antallTakter + ' takter',

@@ -341,6 +341,16 @@ html, body {
 
 .partiturspor { position: absolute; left: 0; will-change: transform; }
 
+/* Et skannet stykke som ikke er lest ennå: si det, og tilby lesinga.
+   Står der partituret ellers ville stått, så den ikke er til å overse. */
+.les-noter {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; gap: 14px;
+  align-items: center; justify-content: center;
+  text-align: center; padding: 0 24px;
+}
+.les-noter p { margin: 0; max-width: 34ch; color: var(--tekst-2); line-height: 1.5; }
+
 /* Nøkler og stemmenavn står fast i venstremargen. */
 .partiturnokkel {
   position: absolute; left: 0; z-index: 2; pointer-events: none;

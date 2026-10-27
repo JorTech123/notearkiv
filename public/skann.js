@@ -612,9 +612,32 @@
       })
       .then(function (r) { return r.json(); })
       .then(function () {
+        // SIDENE ER LAGRET — men et notesett uten toner er bare bilder.
+        //
+        // Lesinga skjer paa serveren og tar et par minutter: to lesere
+        // over hver side, den ene for tonene og den andre for teksten.
+        // Uten dette kallet blir stykket staaende merket «venter», og
+        // skanninga foeles like daarlig som foer den fantes.
+        framdrift('Leser notene… dette tar et par minutter', 0.98);
+        el('framdrift-tittel').textContent = 'Leser notene';
+        return fetch('/api/gjenkjenn', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: id }),
+        }).then(function (r) { return r.json().catch(function () { return {}; }); });
+      })
+      .then(function (res) {
         framdrift('Ferdig', 1);
-        el('framdrift-tittel').textContent = 'Lagret';
-        setTimeout(function () { location.href = './'; }, 900);
+        if (res && res.ok) {
+          el('framdrift-tittel').textContent =
+            res.takter + ' takter, ' + (res.stemmer || []).length + ' stemmer';
+        } else {
+          // Sidene ER lagret. Lesinga kan proeves igjen fra stykket.
+          el('framdrift-tittel').textContent = 'Lagret, men notene ble ikke lest';
+          el('framdrift-tekst').textContent =
+            'Du kan prøve lesinga igjen fra stykket i arkivet.';
+        }
+        setTimeout(function () { location.href = './'; }, res && res.ok ? 1200 : 2600);
       })
       .catch(function (e) {
         el('framdrift-tittel').textContent = 'Det gikk galt';
