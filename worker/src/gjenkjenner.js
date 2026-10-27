@@ -45,53 +45,71 @@ export class Notegjenkjenner extends DurableObject {
     const c = this.ctx.container;
     if (!c) throw new Error('ingen container er koblet til Notegjenkjenner');
 
-    if (!c.running) {
-      // «images.base» er navnet fra containers[].images i
-      // wrangler.jsonc. Wrangler har alt bygget det og festet det til en
-      // digest; her velger vi bare hvilket av dem som skal kjoere.
-      //
-      // Kartet finnes bare under «durable_object»-policyen. Er det tomt,
-      // er det nesten alltid fordi utrullinga brukte det gamle
-      // «image»-feltet — en feil som ellers ville dukket opp som et
-      // uforstaaelig TypeError inne i start().
-      if (!c.images || !c.images.base) {
-        throw new Error('ctx.container.images.base mangler — sjekk at containers[] i wrangler.jsonc har scheduling_policy "durable_object" og et images-kart');
-      }
-      c.start({
-        image: c.images.base,
-        instance: 'standard-2',
-        enableInternet: false,
-      });
-      this.ctx.waitUntil(c.monitor().then(
-        () => console.log('notegjenkjenneren sovnet'),
-        (feil) => console.log('notegjenkjenneren stoppet:', feil),
-      ));
+    // «images.base» er navnet fra containers[].images i wrangler.jsonc.
+    // Wrangler har alt bygget det og festet det til en digest; her
+    // velger vi bare hvilket av dem som skal kjoere.
+    //
+    // Kartet finnes bare under «durable_object»-policyen. Er det tomt,
+    // er det nesten alltid fordi utrullinga brukte det gamle
+    // «image»-feltet — en feil som ellers ville dukket opp som et
+    // uforstaaelig TypeError inne i start().
+    if (!c.images || !c.images.base) {
+      throw new Error('ctx.container.images.base mangler — sjekk at containers[] i wrangler.jsonc har scheduling_policy "durable_object" og et images-kart');
     }
 
-    // Settes ved HVERT kall, ikke bare ved oppstart: etter en utrulling
-    // starter Durable Object-en uten sovevindu selv om containeren
-    // fortsatt gaar, og da ville den blitt ryddet bort med en gang.
-    await c.setInactivityTimeout(SOVNER_ETTER);
-
-    // start() er ferdig lenge foer containeren svarer paa noe. Den har en
-    // «/oppe» som svarer naar modellene er lastet, saa vi banker paa den
-    // i stedet for aa gjette paa en ventetid.
     const port = c.getTcpPort(PORT);
     const frist = Date.now() + KLAR_INNEN;
-    for (let forsok = 0; ; forsok++) {
-      let feil = null;
+    let sist = 'ikke startet';
+
+    // start() MAA kunne forsoekes om igjen. Plattformen har ikke alltid
+    // en maskin aa gi med en gang:
+    //
+    //   «There is no container instance that can be provided to this
+    //    Durable Object, try again later»
+    //
+    // Det er kapasitet, ikke en feil i oppsettet — og «try again later»
+    // er bokstavelig ment. Hjelpeklassen vi ikke kan bruke her gjorde
+    // dette selv; kaller man start() én gang og bare venter etterpaa,
+    // venter man paa noe som aldri ble startet.
+    for (let forsok = 0; Date.now() < frist; forsok++) {
+      if (!c.running) {
+        // Etter en stund forsoekes en mindre stoerrelse. Den er lettere
+        // aa finne plass til, og en halv kjerne er bedre enn ingenting.
+        const storrelse = forsok < 8 ? 'standard-2' : 'standard-1';
+        try {
+          c.start({ image: c.images.base, instance: storrelse, enableInternet: false });
+          // monitor() avvises naar oppstarten ikke lykkes, og avvisninga
+          // MAA hentes — ellers blir det en ubehandlet avvisning per
+          // forsoek, og de drukner loggen i feil som ikke betyr noe.
+          this.ctx.waitUntil(c.monitor().then(
+            () => console.log('notegjenkjenneren sovnet'),
+            (feil) => console.log('notegjenkjenneren startet ikke:', feil && feil.message),
+          ));
+        } catch (e) {
+          sist = e.message;
+        }
+      }
+
+      // start() er ferdig lenge foer containeren svarer paa noe. Den har
+      // en «/oppe» som svarer naar modellene er lastet, saa vi banker
+      // paa den i stedet for aa gjette paa en ventetid.
       try {
         const svar = await port.fetch('http://container/oppe');
-        if (svar.ok) return port;
-        feil = `svarte ${svar.status}`;
+        if (svar.ok) {
+          // Settes naar den er oppe, og ved hvert kall: etter en
+          // utrulling starter Durable Object-en uten sovevindu selv om
+          // containeren gaar, og da ryddes den bort med en gang.
+          await c.setInactivityTimeout(SOVNER_ETTER);
+          return port;
+        }
+        sist = `svarte ${svar.status}`;
       } catch (e) {
-        feil = e.message;
+        sist = e.message;
       }
-      if (Date.now() > frist) {
-        throw new Error(`containeren ble ikke klar paa ${KLAR_INNEN / 1000}s (${feil})`);
-      }
-      await scheduler.wait(Math.min(250 * (forsok + 1), 2000));
+
+      await scheduler.wait(Math.min(400 * (forsok + 1), 3000));
     }
+    throw new Error(`containeren ble ikke klar paa ${KLAR_INNEN / 1000}s (${sist})`);
   }
 
   /** Leser ett bilde og gir MusicXML tilbake. */
