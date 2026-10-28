@@ -393,7 +393,8 @@ export async function importer(bytes, valg) {
  * ligger hele stykket oppaa hverandre i takt 1 til 20.
  */
 export async function importerFlere(liste, valg) {
-  const doc = { deler: [], slagPerTakt: 4, tittel: '', fortegn: null, merker: [] };
+  const doc = { deler: [], slagPerTakt: 4, tittel: '', fortegn: null,
+                merker: [], merkerFunnet: 0 };
   let forskyvning = 0;
 
   for (const post of liste) {
@@ -422,6 +423,8 @@ export async function importerFlere(liste, valg) {
         // skriver dem ikke i det hele tatt, saa et strofisk stykke ble
         // lest som om hvert vers var ny musikk. Taktnumrene er
         // tekstlesingas egne, og oversettes med koblinga justeringa ga.
+        const funnet = merkerFra(tekstDoc);
+        doc.merkerFunnet += funnet.length;
         const audTakter = Math.max(...tekstDoc.deler.map((d) => d.takter || 0), 0);
         const noteTakter = Math.max(...side.deler.map((d) => d.takter || 0), 0);
         // Er de to lesingene sterkt uenige om hvor mange takter arket
@@ -430,7 +433,7 @@ export async function importerFlere(liste, valg) {
         const enige = audTakter && noteTakter
           && Math.min(audTakter, noteTakter) >= Math.max(audTakter, noteTakter) * 0.75;
         if (enige) {
-          for (const m of merkerFra(tekstDoc)) {
+          for (const m of funnet) {
             const t = oversettTakt(taktKart, m.takt, audTakter, noteTakter);
             if (t) doc.merker.push(Object.assign({}, m, { takt: t + forskyvning }));
           }
@@ -680,6 +683,10 @@ function ferdig(valg, doc, rekke, ut, slagPerTakt) {
     // Repetisjonene: hvor verset begynner om igjen, og 1./2. hus.
     // Tomt naar tekstlesinga ikke kom gjennom — da vet vi ikke.
     gjentakelser: (doc.merker || []).length ? doc.merker : undefined,
+    // Hvor mange repetisjonstegn tekstlesinga fant, mot hvor mange vi
+    // klarte aa plassere. Spriker de, er det oversettelsen mellom de to
+    // lesingenes taktnumre som ikke holder — ikke at tegnene mangler.
+    merkerFunnet: doc.merkerFunnet || 0,
     // Tonearten: tallet til graveringa, navnet til deg. Uten dette
     // tegnes ingen faste fortegn, og da maa hver svarte tangent faa et
     // loest kryss — selv i en note med fire b-er.

@@ -325,6 +325,9 @@ export default {
           // men man skal kunne se at det mangler — og hvorfor.
           ord: lest.ord || 0,
           utenTekst,
+          // Repetisjonstegn: funnet av tekstlesinga / plassert i noten.
+          repetisjoner: { funnet: lest.merkerFunnet || 0,
+                          plassert: (lest.gjentakelser || []).length },
         });
       }
 
