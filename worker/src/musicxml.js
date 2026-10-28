@@ -118,6 +118,7 @@ export function les(xml) {
     const kropp = pm[2];
     const noter = [];
     const nokler = {};
+    const merker = [];
     let divisjoner = 1;
     let taktNr = 0;
 
@@ -126,6 +127,26 @@ export function les(xml) {
     while ((tm = taktRe.exec(kropp)) !== null) {
       const takt = tm[1];
       taktNr++;
+
+      // Repetisjonene: tegnene som sier at verset skal synges om igjen.
+      //
+      // De staar i <barline>, og en takt kan ha to — en til venstre og
+      // en til hoeyre. «forward» aapner repetisjonen, «backward» lukker
+      // den, og <ending> er 1. og 2. hus. Uten dette blir et strofisk
+      // stykke lest som om hvert vers var ny musikk.
+      const barRe = /<barline\b[^>]*>([\s\S]*?)<\/barline>/g;
+      let bm;
+      while ((bm = barRe.exec(takt)) !== null) {
+        const rm = /<repeat\b[^>]*direction="(forward|backward)"/.exec(bm[1]);
+        if (rm) merker.push({ takt: taktNr, type: rm[1] === 'forward' ? 'start' : 'slutt' });
+        const em = /<ending\b[^>]*number="([^"]*)"[^>]*type="(start|stop|discontinue)"/.exec(bm[1]);
+        if (em) {
+          const nr = parseInt(em[1], 10);
+          if (Number.isFinite(nr)) {
+            merker.push({ takt: taktNr, type: 'hus', nummer: nr, kant: em[2] });
+          }
+        }
+      }
 
       // En takt kan ha flere <attributes>: divisjoner i den ene,
       // noekler i den neste. Begge maa leses.
@@ -176,7 +197,7 @@ export function les(xml) {
 
     const meta = navn[deler.length] || {};
     deler.push({
-      id: pm[1], takter: taktNr, noter, nokler,
+      id: pm[1], takter: taktNr, noter, nokler, merker,
       navn: meta.navn || '', lyd: meta.lyd || '',
     });
   }

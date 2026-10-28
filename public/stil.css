@@ -389,6 +389,16 @@ html, body {
   letter-spacing: .04em; text-transform: uppercase;
 }
 
+/* Repetisjonstegn: tykk strek og to prikker, og 1./2. hus over staven.
+   De leses av tekstleseren — den nevrale skriver dem ikke. */
+.ns-reptykk { fill: #ffffffd9; }
+.ns-repprikk { fill: #ffffffd9; }
+.ns-hus {
+  fill: #ffffffcc;
+  font: 600 1em ui-sans-serif, system-ui, sans-serif;
+}
+.ns-husboyle { stroke: #ffffff8c; stroke-width: 1.4; fill: none; }
+
 /* Pausene tegnes som figurer, ikke skrifttegn — se pauseTegn().
    Hel- og halvpause er fylte rektangler, fjerdedelen er en strek. */
 .ns-pausetegn { fill: #ffffff8c; }

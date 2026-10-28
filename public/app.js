@@ -829,6 +829,7 @@
         slagPerTakt: S.stykke.slagPerTakt || 4,
         toneart: S.stykke.toneart,
         fortegn: S.stykke.fortegn,
+        gjentakelser: S.stykke.gjentakelser,
         venstre: L * 10,
       });
     spor.appendChild(satt.svg);

@@ -320,6 +320,7 @@
     return {
       L, perSlag, slagPerTakt, fortegn, faste: fasteFortegn(fortegn),
       venstre, xAvSlag, sisteSlag, sisteTakt,
+      gjentakelser: valg.gjentakelser || null,
       bredde: xAvSlag(sisteSlag) + perSlag,
     };
   }
@@ -327,9 +328,39 @@
   /** Taktstreker gjennom hele systemet, med taktnummer oeverst. */
   function tegnTaktstreker(mor, g, fraY, tilY) {
     const streker = lag('g', { class: 'ns-taktstrek' });
+    const L = g.L;
+    // Repetisjonene, slaatt opp paa takt. «start» staar til VENSTRE i
+    // takten den aapner, «slutt» til HOEYRE i takten den lukker.
+    const start = new Set(), slutt = new Set(), hus = new Map();
+    for (const m of g.gjentakelser || []) {
+      if (m.type === 'start') start.add(m.takt);
+      else if (m.type === 'slutt') slutt.add(m.takt);
+      else if (m.type === 'hus' && m.kant === 'start') hus.set(m.takt, m.nummer);
+    }
+
     for (let t = 1; t <= g.sisteTakt + 1; t++) {
       const x = g.xAvSlag((t - 1) * g.slagPerTakt);
       streker.appendChild(lag('line', { x1: x, y1: fraY, x2: x, y2: tilY }));
+
+      // Repetisjonstegn: tykk strek og to prikker, slik det staar i
+      // noten. Uten dem leses et strofisk stykke som om hvert vers var
+      // ny musikk — og da staar man der og lurer paa naar man skal
+      // begynne paa verset igjen.
+      if (start.has(t)) tegnRepetisjon(streker, x, fraY, tilY, L, 1);
+      if (slutt.has(t - 1)) tegnRepetisjon(streker, x, fraY, tilY, L, -1);
+
+      if (hus.has(t)) {
+        const h = lag('text', {
+          class: 'ns-hus', x: x + L * 0.5, y: fraY - L * 1.9, 'font-size': L * 1.2,
+        });
+        h.textContent = hus.get(t) + '.';
+        streker.appendChild(h);
+        streker.appendChild(lag('path', {
+          class: 'ns-husboyle',
+          d: `M${x},${fraY - L * 2.5} L${x},${fraY - L * 1.3}`,
+        }));
+      }
+
       if (t <= g.sisteTakt) {
         const nr = lag('text', { class: 'ns-taktnr', x: x + 3, y: fraY - g.L * 0.6, 'font-size': g.L * 1.1 });
         nr.textContent = t;
@@ -337,6 +368,25 @@
       }
     }
     mor.appendChild(streker);
+  }
+
+  /**
+   * Repetisjonstegnet: tykk strek med to prikker.
+   *
+   * `side` er +1 naar tegnet AAPNER (prikkene staar til hoeyre for
+   * streken) og −1 naar det LUKKER (prikkene staar til venstre).
+   */
+  function tegnRepetisjon(mor, x, fraY, tilY, L, side) {
+    mor.appendChild(lag('rect', {
+      class: 'ns-reptykk',
+      x: x - (side > 0 ? 0 : L * 0.42), y: fraY,
+      width: L * 0.42, height: tilY - fraY,
+    }));
+    const px = x + side * L * 0.95;
+    const midt = (fraY + tilY) / 2;
+    for (const dy of [-L * 0.5, L * 0.5]) {
+      mor.appendChild(lag('circle', { class: 'ns-repprikk', cx: px, cy: midt + dy, r: L * 0.17 }));
+    }
   }
 
   /** Setter én stemme som en sammenhengende notelinje. */

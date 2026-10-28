@@ -179,6 +179,59 @@ function rensStavelse(raa) {
   return s;
 }
 
+/**
+ * Oversetter ett taktnummer fra tekstlesinga til notelesingas.
+ *
+ * Koblinga bygges av justerte stavelser, saa den dekker bare takter
+ * som BAERER tekst. Et repetisjonstegn staar gjerne i siste takt, og
+ * der er det ofte ingen — da falt merket bort i stillhet.
+ *
+ * Mangler takten, brukes forskjellen de andre taktene ble enige om.
+ * De to lesingene teller stort sett i takt; det er startpunktet som
+ * kan sprike.
+ */
+function oversettTakt(taktKart, t, audTakter, noteTakter) {
+  const rett = taktKart.get(t);
+  if (rett) return rett;
+  if (!taktKart.size) return null;
+
+  const par = [...taktKart].sort((a, b) => a[0] - b[0]);
+  const foer = par.filter(([f]) => f < t).pop();
+  const etter = par.find(([f]) => f > t);
+
+  let ut;
+  if (foer && etter) {
+    // Mellom to kjente takter: legg den der forholdet tilsier.
+    const andel = (t - foer[0]) / (etter[0] - foer[0]);
+    ut = Math.round(foer[1] + andel * (etter[1] - foer[1]));
+  } else if (audTakter > 0 && noteTakter > 0) {
+    // Utenfor de kjente: skaler mot hvor mange takter hver lesing fant.
+    // En fast forskyvning duger ikke — den plasserte et avslutningstegn
+    // i takt 19 av et stykke paa 17.
+    ut = Math.round(t * noteTakter / audTakter);
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(ut)) return null;
+  return Math.max(1, Math.min(noteTakter || ut, ut));
+}
+
+/**
+ * Repetisjonstegnene i én lesing, hvert tegn bare én gang.
+ *
+ * Et tegn staar paa hver stav i systemet — fire staver gir fire like
+ * merker — men i musikken er det ett.
+ */
+function merkerFra(doc) {
+  const sett = new Map();
+  for (const del of doc.deler) {
+    for (const m of del.merker || []) {
+      sett.set(`${m.takt}:${m.type}:${m.nummer || ''}:${m.kant || ''}`, m);
+    }
+  }
+  return [...sett.values()].sort((a, b) => a.takt - b.takt);
+}
+
 /** Stavelsene i én lesing, i den rekkefoelgen de synges. */
 function stavelserFra(doc) {
   // Teksten henger paa én stemme, men flere staver kan ha den samme
@@ -244,7 +297,7 @@ function sangstaver(doc) {
  */
 function leggPaaTekst(doc, stavelser) {
   const staver = sangstaver(doc);
-  if (!stavelser.length || !staver.length) return 0;
+  if (!stavelser.length || !staver.length) return { satt: 0, taktKart: new Map() };
 
   // Oeverste stemme baerer teksten: i en homofon korsats har den én
   // tone per stavelse, og det er alle disse arrangementene.
@@ -278,6 +331,11 @@ function leggPaaTekst(doc, stavelser) {
   }
 
   const paaSlag = new Map();
+  // Hvilken takt i TEKSTlesinga som svarer til hvilken i NOTElesinga.
+  // De to teller takter hver for seg, saa repetisjonstegnene — som bare
+  // den ene leser — maa oversettes foer de kan brukes. Hvert justerte
+  // par er én stemme for en kobling; flertallet vinner.
+  const stemmer = new Map();
   let i = a.length, j = b.length, satt = 0;
   while (i > 0 || j > 0) {
     const steg = fra[i][j];
@@ -285,9 +343,19 @@ function leggPaaTekst(doc, stavelser) {
     if (steg[2]) {
       const note = b[steg[1]];
       paaSlag.set(note.takt + ':' + note.slag, a[steg[0]].tekst);
+      const fraT = a[steg[0]].takt, tilT = note.takt;
+      if (!stemmer.has(fraT)) stemmer.set(fraT, new Map());
+      const s = stemmer.get(fraT);
+      s.set(tilT, (s.get(tilT) || 0) + 1);
       satt++;
     }
     i = steg[0]; j = steg[1];
+  }
+  const taktKart = new Map();
+  for (const [fraT, s] of stemmer) {
+    let beste = null, flest = 0;
+    for (const [tilT, n] of s) if (n > flest) { flest = n; beste = tilT; }
+    if (beste !== null) taktKart.set(fraT, beste);
   }
 
   // Teksten legges paa ALLE sangstavene paa samme slag: i en homofon
@@ -304,7 +372,7 @@ function leggPaaTekst(doc, stavelser) {
       if (t) { n.tekst = t; brukt.add(k); }
     }
   }
-  return satt;
+  return { satt, taktKart };
 }
 
 /**
@@ -325,7 +393,7 @@ export async function importer(bytes, valg) {
  * ligger hele stykket oppaa hverandre i takt 1 til 20.
  */
 export async function importerFlere(liste, valg) {
-  const doc = { deler: [], slagPerTakt: 4, tittel: '', fortegn: null };
+  const doc = { deler: [], slagPerTakt: 4, tittel: '', fortegn: null, merker: [] };
   let forskyvning = 0;
 
   for (const post of liste) {
@@ -348,7 +416,25 @@ export async function importerFlere(liste, valg) {
     // er poenget.
     if (tekstBytes) {
       try {
-        leggPaaTekst(side, stavelserFra(await lesBytes(tekstBytes)));
+        const tekstDoc = await lesBytes(tekstBytes);
+        const { taktKart } = leggPaaTekst(side, stavelserFra(tekstDoc));
+        // Repetisjonstegnene leses BARE av tekstleseren — den nevrale
+        // skriver dem ikke i det hele tatt, saa et strofisk stykke ble
+        // lest som om hvert vers var ny musikk. Taktnumrene er
+        // tekstlesingas egne, og oversettes med koblinga justeringa ga.
+        const audTakter = Math.max(...tekstDoc.deler.map((d) => d.takter || 0), 0);
+        const noteTakter = Math.max(...side.deler.map((d) => d.takter || 0), 0);
+        // Er de to lesingene sterkt uenige om hvor mange takter arket
+        // har, vet vi ikke hvor et merke hoerer hjemme. Da er det bedre
+        // aa la det vaere enn aa sette et repetisjonstegn paa feil sted.
+        const enige = audTakter && noteTakter
+          && Math.min(audTakter, noteTakter) >= Math.max(audTakter, noteTakter) * 0.75;
+        if (enige) {
+          for (const m of merkerFra(tekstDoc)) {
+            const t = oversettTakt(taktKart, m.takt, audTakter, noteTakter);
+            if (t) doc.merker.push(Object.assign({}, m, { takt: t + forskyvning }));
+          }
+        }
       } catch (e) { /* uten tekst, men med noter */ }
     }
 
@@ -591,6 +677,9 @@ function ferdig(valg, doc, rekke, ut, slagPerTakt) {
     // Antall stavelser som faktisk havnet paa en tone. Det er dette
     // man ser i appen, ikke hvor mange tekstleseren fant.
     ord: medTekst.size,
+    // Repetisjonene: hvor verset begynner om igjen, og 1./2. hus.
+    // Tomt naar tekstlesinga ikke kom gjennom — da vet vi ikke.
+    gjentakelser: (doc.merker || []).length ? doc.merker : undefined,
     // Tonearten: tallet til graveringa, navnet til deg. Uten dette
     // tegnes ingen faste fortegn, og da maa hver svarte tangent faa et
     // loest kryss — selv i en note med fire b-er.
