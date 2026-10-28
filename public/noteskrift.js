@@ -107,6 +107,38 @@
     return e;
   }
 
+  /**
+   * Pausetegn som FIGURER, ikke skrifttegn.
+   *
+   * De sto som 𝄻 𝄼 𝄽 fra Unicodes musikkblokk, og den har iOS ingen
+   * font for: paa telefonen ble hver eneste pause en tom firkant. Og
+   * ingen av fontene vi ba om — Bravura, Noto Music — er lastet noe
+   * sted, saa det hang paa hva operativsystemet tilfeldigvis hadde.
+   *
+   * Tegnet opp selv virker det likt overalt og skalerer med staven.
+   * `midtY` er midt paa staven, og linjene ligger paa midtY + k·L.
+   */
+  function pauseTegn(slag, x, midtY, L) {
+    if (slag === 'hel' || slag === 'halv') {
+      // Helpausen HENGER under nest oeverste linje, halvpausen SITTER
+      // paa midtlinja. Det er slik man ser forskjell paa dem.
+      const b = L * 1.15, h = L * 0.52;
+      const y = slag === 'hel' ? midtY - L : midtY - h;
+      return [lag('rect', {
+        class: 'ns-pausetegn', x: x - b / 2, y: y, width: b, height: h, rx: L * 0.06,
+      })];
+    }
+    // Fjerdedelspausen: tre skraa streker og en krøll, tegnet som én
+    // strek med runde hjoerner. Ikke en graverers glyf, men utvetydig.
+    const s = (a, b) => `${(x + a * L).toFixed(2)},${(midtY + b * L).toFixed(2)}`;
+    return [lag('path', {
+      class: 'ns-pausestrek',
+      'stroke-width': L * 0.26,
+      d: `M${s(-0.34, -1.02)} L${s(0.22, -0.34)} L${s(-0.20, 0.10)} L${s(0.34, 0.74)}`
+        + ` C${s(0.04, 0.58)} ${s(-0.24, 0.80)} ${s(0.02, 1.04)}`,
+    })];
+  }
+
   /** Hvor mye hoeyde én stav trenger, i linjeavstander. */
   const STAVHOYDE = 10.4;
 
@@ -254,13 +286,9 @@
         const lengde = til - fra;
         const helTakt = lengde >= slagPerTakt - 0.05;
         const x = xAvSlag((t - 1) * slagPerTakt + (helTakt ? slagPerTakt / 2 : fra + 0.2));
-        const p = lag('text', {
-          class: 'ns-pausetegn', x: x, y: midtY + L * 0.5, 'font-size': L * 2.6,
-        });
         // hel, halv eller fjerdedel — nok til aa lese takten
-        p.textContent = helTakt || lengde >= 3.5 ? '𝄻'
-          : (lengde >= 1.8 ? '𝄼' : '𝄽');
-        gPause.appendChild(p);
+        for (const e of pauseTegn(helTakt || lengde >= 3.5 ? 'hel'
+          : (lengde >= 1.8 ? 'halv' : 'fjerdedel'), x, midtY, L)) gPause.appendChild(e);
       }
     }
     mor.appendChild(gPause);

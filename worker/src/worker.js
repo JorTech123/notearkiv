@@ -229,6 +229,8 @@ export default {
         const stykke = (katalog.stykker || []).find((s) => s.id === id);
         if (!stykke) return svar({ feil: 'Fant ikke stykket' }, 404);
         if (!(stykke.sider || []).length) return svar({ feil: 'Stykket har ingen sider' }, 400);
+        // Stemmenavn du har satt for haand, om du har gjort det.
+        const rettet = await env.NOTER.get('stemmer:' + id, 'json');
 
         const tekstkoder = new TextEncoder();
         const sider = [];
@@ -266,7 +268,15 @@ export default {
             id: stykke.id, tittel: stykke.tittel,
             // Stemmene brukeren oppga i skanneren. De er bedre enn noe
             // leseren kan utlede, og styrer baade antall og navn.
-            stemmer: stykke.stemmer || [],
+            //
+            // «oppgitt» foerst: det er svaret slik det ble gitt, og det
+            // staar uroert. «stemmer» er resultatet av forrige lesing,
+            // og det er ikke det samme — leses det som et svar, arver
+            // en ny lesing forrige lesings feil.
+            //
+            // Har du rettet stemmene for haand i appen, veier det
+            // tyngst av alt: da har du sett paa noten og sagt fra.
+            stemmer: rettet || stykke.oppgitt || stykke.stemmer || [],
           });
         } catch (e) {
           return svar({ feil: 'Kunne ikke sette sammen stemmene: ' + e.message }, 500);
@@ -383,6 +393,14 @@ export default {
         const stykke = {
           id,
           tittel: kropp.tittel || id,
+          // SVARET DITT, lagret for seg.
+          //
+          // «stemmer» blir skrevet over av gjenkjenninga — den legger
+          // til de linjene den mente den fant. Leste vi den tilbake som
+          // om det var ditt svar, trodde vi at du hadde oppgitt klaver
+          // fordi forrige lesing fant noe den kalte klaver, og da ble
+          // feilen staaende for alltid. Dette feltet roerer ingen.
+          oppgitt: kropp.stemmer && kropp.stemmer.length ? kropp.stemmer : null,
           stemmer,
           antallSider: sider.length,
           antallTakter: sider.reduce((a, s) => a + (s.antallTakter || 0), 0),

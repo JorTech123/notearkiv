@@ -798,12 +798,21 @@
       : (S.visKlaver ? alle : (syngende.length ? syngende : alle));
 
     var flate = el('partitur');
-    var h = Math.max(160, flate.clientHeight - 150);     // plass til knappene
+    // Plassen som faktisk er LEDIG: knapperaden ligger over bunnen av
+    // flata, saa den hoeyden kan vi ikke tegne i.
+    var KNAPPEROM = 150;
+    var h = Math.max(160, flate.clientHeight - KNAPPEROM);
+    // Staven er hoeyere enn STAVHOYDE alene: det kommer en toppmarg paa
+    // 2,6 L og en bunnmarg paa 1 L i tillegg, og sangteksten henger
+    // 4,3 L under midten av den NEDERSTE staven. Regnes det ikke med,
+    // blir noten tegnet litt for stor, og teksten under siste stav
+    // havner bak knappene.
+    var EKSTRA = 3.6;
     // Vises bare én stemme, er det plass til mye stoerre noter. Et
     // fast tak gjorde at én stav laa som en tynn strek midt paa en
     // ellers tom skjerm.
     var L = Math.max(7, Math.min(vis.length <= 1 ? 26 : 18,
-      Math.floor(h / (vis.length * window.Noteskrift.STAVHOYDE))));
+      Math.floor(h / (vis.length * window.Noteskrift.STAVHOYDE + EKSTRA))));
 
     var satt = window.Noteskrift.tegnPartitur(
       // Teksten staar under DIN stemme, ikke under alle. Den er den
@@ -823,7 +832,10 @@
         venstre: L * 10,
       });
     spor.appendChild(satt.svg);
-    spor.style.top = Math.max(0, (flate.clientHeight - satt.hoyde) / 2 - 40) + 'px';
+    // Sentreres i den LEDIGE hoeyden, ikke i hele flata. Foer ble noten
+    // dimensjonert for plassen over knappene, men plassert midt i alt —
+    // og da gled bunnen, med sangteksten, inn bak knapperaden.
+    spor.style.top = Math.max(0, Math.round((h - satt.hoyde) / 2)) + 'px';
     S.partitur = satt;
 
     // Stemmenavnene i margen

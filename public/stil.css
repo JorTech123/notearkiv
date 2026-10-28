@@ -389,9 +389,12 @@ html, body {
   letter-spacing: .04em; text-transform: uppercase;
 }
 
-.ns-pausetegn {
-  fill: #ffffff6b; text-anchor: middle;
-  font-family: 'Bravura', 'Noto Music', 'Segoe UI Symbol', serif;
+/* Pausene tegnes som figurer, ikke skrifttegn — se pauseTegn().
+   Hel- og halvpause er fylte rektangler, fjerdedelen er en strek. */
+.ns-pausetegn { fill: #ffffff8c; }
+.ns-pausestrek {
+  fill: none; stroke: #ffffff8c;
+  stroke-linecap: round; stroke-linejoin: round;
 }
 
 /* ───────────────────────── stemmepanelet ────────────────────────────── */
