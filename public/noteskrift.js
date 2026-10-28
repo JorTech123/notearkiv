@@ -275,7 +275,11 @@
     const L = valg.L || 12;
     const perSlag = valg.perSlag || 70;
     const slagPerTakt = valg.slagPerTakt || 4;
-    const fortegn = fortegnAv(valg.toneart);
+    // Tallet gaar foran navnet: lesinga oppgir tonearten som antall
+    // kryss eller b, og det er presist. Navnet er for deg aa lese, og
+    // er bare en omvei tilbake til det samme tallet.
+    const fortegn = Number.isFinite(valg.fortegn)
+      ? valg.fortegn : fortegnAv(valg.toneart);
     const venstre = Math.round(valg.venstre || L * 9);
     const xAvSlag = (s) => venstre + s * perSlag;
 

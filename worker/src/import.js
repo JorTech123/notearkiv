@@ -50,6 +50,42 @@ function median(a) {
 }
 
 /**
+ * Henter enkelttoner som har spratt en oktav ut av stemmens leie.
+ *
+ * Oktaven settes per STAV. Leser gjenkjenneren en tone paa feil stav —
+ * og det gjoer den innimellom — faar den stavens korreksjon, og lander
+ * tolv halvtoner fra der den hoerer hjemme. Paa skjermen er det én tone
+ * med en haug hjelpelinjer over eller under staven, og i lyden er det
+ * et sprang som ikke staar i noten.
+ *
+ * Maalt paa «Hark test 2» mot en utgave vi vet er riktig: 62 toner laa
+ * utenfor leiet, og ALLE 62 kunne hentes inn med en oktav. Fasiten
+ * hadde én.
+ *
+ * Leiet maales paa stemmen SELV, ikke slaas opp paa navn. Navnene
+ * kommer fra skanneren og kan vaere hva som helst — «1. bass»,
+ * «2. bass» — mens tonene alltid forteller sitt eget leie.
+ */
+function foldInnIOmfang(noter) {
+  const h = noter.map((n) => n.midi).filter(Number.isFinite).sort((a, b) => a - b);
+  if (h.length < 8) return 0;
+  const p = (q) => h[Math.min(h.length - 1, Math.floor(q * h.length))];
+  // Litt slingringsmonn over og under: en stemme har lov til aa strekke
+  // seg noen toner utenfor der den ellers ligger.
+  const lav = p(0.10) - 6, hoy = p(0.90) + 6;
+  if (hoy - lav < 12) return 0;        // for smalt til aa folde trygt
+  let flyttet = 0;
+  for (const n of noter) {
+    if (!Number.isFinite(n.midi)) continue;
+    const foer = n.midi;
+    while (n.midi < lav) n.midi += 12;
+    while (n.midi > hoy) n.midi -= 12;
+    if (n.midi !== foer) flyttet++;
+  }
+  return flyttet;
+}
+
+/**
  * Hvilken oktav staven faktisk KLINGER i.
  *
  * I MusicXML er <pitch> den klingende tonen, og <clef-octave-change>
@@ -289,7 +325,7 @@ export async function importer(bytes, valg) {
  * ligger hele stykket oppaa hverandre i takt 1 til 20.
  */
 export async function importerFlere(liste, valg) {
-  const doc = { deler: [], slagPerTakt: 4, tittel: '' };
+  const doc = { deler: [], slagPerTakt: 4, tittel: '', fortegn: null };
   let forskyvning = 0;
 
   for (const post of liste) {
@@ -318,6 +354,9 @@ export async function importerFlere(liste, valg) {
 
     if (side.slagPerTakt) doc.slagPerTakt = side.slagPerTakt;
     if (!doc.tittel && side.tittel) doc.tittel = side.tittel;
+    // Tonearten fra hver side. Den foerste sida er den som teller mest:
+    // der staar noekkelen i sin rene form, foer eventuelle skifter.
+    if (Number.isFinite(side.fortegn) && doc.fortegn === null) doc.fortegn = side.fortegn;
 
     let flest = 0;
     for (const del of side.deler) {
@@ -527,8 +566,18 @@ function byggStykke(doc, valg) {
   return ferdig(valg, doc, rekke, ut, slagPerTakt);
 }
 
+// Toneartsnavn paa norsk, fra sju b-er til sju kryss. Merk at B er
+// b-en og H er den rene sjuende — norsk, ikke engelsk.
+const DURNAVN = ['Cess', 'Gess', 'Dess', 'Ass', 'Ess', 'B', 'F',
+  'C', 'G', 'D', 'A', 'E', 'H', 'Fiss', 'Ciss'];
+
 /** Samler det ferdige stykket. */
 function ferdig(valg, doc, rekke, ut, slagPerTakt) {
+  // Hent enkelttoner som har spratt en oktav ut av stemmens leie.
+  // Gjoeres helt til slutt: foerst naa er stemmene satt, og det er
+  // stemmens eget leie foldinga maaler mot.
+  for (const n of rekke) foldInnIOmfang(ut[n]);
+
   let takter = 0;
   const medTekst = new Set();
   for (const n of rekke) {
@@ -542,6 +591,12 @@ function ferdig(valg, doc, rekke, ut, slagPerTakt) {
     // Antall stavelser som faktisk havnet paa en tone. Det er dette
     // man ser i appen, ikke hvor mange tekstleseren fant.
     ord: medTekst.size,
+    // Tonearten: tallet til graveringa, navnet til deg. Uten dette
+    // tegnes ingen faste fortegn, og da maa hver svarte tangent faa et
+    // loest kryss — selv i en note med fire b-er.
+    fortegn: Number.isFinite(doc.fortegn) ? doc.fortegn : undefined,
+    toneart: Number.isFinite(doc.fortegn) && Math.abs(doc.fortegn) <= 7
+      ? DURNAVN[doc.fortegn + 7] + '-dur' : undefined,
     id: valg.id,
     tittel: valg.tittel || doc.tittel || valg.id,
     stemmer: rekke,

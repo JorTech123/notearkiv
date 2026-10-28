@@ -51,6 +51,34 @@ function midiAv(pitch) {
   return (tall(pitch, 'octave', 4) + 1) * 12 + TRINN[steg] + tall(pitch, 'alter', 0);
 }
 
+/**
+ * Tonearten, som antall kryss (+) eller b (−).
+ *
+ * Uten denne maa hver eneste svarte tangent skrives ut med et loest
+ * fortegn, og da staar det kryss over hele arket selv om noten er i
+ * Ass-dur med fire b-er. Lesinga oppgir den faktisk — «Hark» kommer ut
+ * med <fifths>-4</fifths>, akkurat som det staar i noten.
+ *
+ * Et ark kan ha flere: et taktskifte, eller en feillesing i et enkelt
+ * system. Den som gaar igjen oftest er den som gjelder.
+ */
+function fortegnAv(xml) {
+  const re = /<fifths>\s*(-?\d+)\s*<\/fifths>/g;
+  const teller = new Map();
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    // Tallet hentes ut av fangstgruppa. Et forsoek paa aa skrelle vekk
+    // taggene med \D+ spiser minustegnet — det er ogsaa et ikke-siffer —
+    // og da ble Ass-dur med fire b-er til E-dur med fire kryss.
+    const n = parseInt(m[1], 10);
+    if (Number.isFinite(n) && Math.abs(n) <= 7) teller.set(n, (teller.get(n) || 0) + 1);
+  }
+  if (!teller.size) return null;
+  let beste = null, flest = 0;
+  for (const [n, antall] of teller) if (antall > flest) { flest = antall; beste = n; }
+  return beste;
+}
+
 /** Taktarten som antall fjerdedeler per takt. 4/4 og 2/2 gir begge 4. */
 function slagPerTakt(xml) {
   const m = xml.match(/<beats>(\d+)<\/beats>\s*<beat-type>(\d+)<\/beat-type>/);
@@ -153,7 +181,10 @@ export function les(xml) {
     });
   }
 
-  return { deler, slagPerTakt: slagPerTakt(xml), tittel: (tag(xml, 'work-title') || '').trim() };
+  return {
+    deler, slagPerTakt: slagPerTakt(xml), fortegn: fortegnAv(xml),
+    tittel: (tag(xml, 'work-title') || '').trim(),
+  };
 }
 
 /**

@@ -284,6 +284,10 @@ export default {
           },
           noter: lest.noter,
           slagPerTakt: lest.slagPerTakt,
+          // Tonearten lesinga fant. Uten den tegnes ingen faste
+          // fortegn, og hver svarte tangent faar et loest kryss.
+          fortegn: lest.fortegn,
+          toneart: lest.toneart || stykke.toneart,
           antallTakter: Math.max(stykke.antallTakter || 0, lest.antallTakter || 0),
           stemmer: (stykke.stemmer || []).length === lest.stemmer.length
             ? stykke.stemmer

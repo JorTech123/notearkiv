@@ -819,6 +819,7 @@
         L: L, perSlag: Math.round(L * 3.2),
         slagPerTakt: S.stykke.slagPerTakt || 4,
         toneart: S.stykke.toneart,
+        fortegn: S.stykke.fortegn,
         venstre: L * 10,
       });
     spor.appendChild(satt.svg);
