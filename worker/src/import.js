@@ -451,20 +451,36 @@ function byggStykke(doc, valg) {
   // sangstemmene sammen og deles paa nytt paa tonehoeyde — like mange
   // som brukeren sa at noten har.
   const oppgitt = (valg.stemmer || []).filter((n) => !/^klaver/i.test(n));
+  // SA BRUKEREN AT DET FINNES KLAVER?
+  //
+  // Skanneren spoer linje for linje: «hvilken stemme er 1. linje, 2.
+  // linje …». Lista er derfor en fasit over hvor mange staver arket har
+  // og hva de er. Staar det ingen klaverlinje der, FINNES det ingen —
+  // og det leseren kalte klaver er sangstoff som er tatt fra stemmene.
+  //
+  // Det skjedde: brukeren oppga tre stemmer, lesinga fant fem linjer,
+  // og de to nederste ble doept «klaver h» og «klaver h 2». De laa paa
+  // median 61 og 50 — midt i sangregisteret — mens de tre «stemmene»
+  // laa en oktav for hoeyt og var innbyrdes like. Baryton og bass
+  // manglet altsaa nettopp det stoffet som sto merket klaver.
+  const oppgittKlaver = (valg.stemmer || []).some((n) => /^klaver/i.test(n));
+
   if (oppgitt.length > 1) {
     const sang = rekke.filter((n) => !/^klaver/i.test(n));
+    // Uten oppgitt klaver er HELE lesinga sangstoff.
+    const kilde = oppgittKlaver ? sang : rekke.slice();
     const lengder = sang.map((n) => ut[n].length);
     const storst = Math.max(...lengder, 0);
     const minst = Math.min(...lengder, Infinity);
     const skjev = storst > 0 && minst < storst * 0.25;
 
-    if (sang.length !== oppgitt.length || skjev) {
+    if (kilde.length !== oppgitt.length || skjev) {
       const alle = [];
-      for (const n of sang) for (const x of ut[n]) alle.push(x);
+      for (const n of kilde) for (const x of ut[n]) alle.push(x);
       alle.sort((a, b) => a.takt - b.takt || a.slag - b.slag);
       if (alle.length >= oppgitt.length * 4) {
-        for (const n of sang) { delete ut[n]; }
-        const beholdt = rekke.filter((n) => /^klaver/i.test(n));
+        for (const n of kilde) { delete ut[n]; }
+        const beholdt = oppgittKlaver ? rekke.filter((n) => /^klaver/i.test(n)) : [];
         const deler = delPaaHoyde(alle, oppgitt.length);
         rekke.length = 0;
         oppgitt.forEach((navn, i) => {
