@@ -50,6 +50,34 @@ function median(a) {
 }
 
 /**
+ * Hvilken oktav staven faktisk KLINGER i.
+ *
+ * I MusicXML er <pitch> den klingende tonen, og <clef-octave-change>
+ * beskriver bare notasjonen. Et ordentlig OMR-verktoey skriver begge
+ * deler, og da skal tonene staa som de staar.
+ *
+ * En nevral leser gjoer ikke det. Den skriver tonen slik den LESER den
+ * av staven, og utelater oktavskiftet. Tenorstaven i et mannskorpartitur
+ * er G-noekkel med en liten 8 under — den klinger en oktav ned — og da
+ * kommer hele staven ut en oktav for hoeyt.
+ *
+ * Maalt mot en utgave vi vet er riktig: tenorstemmene laa paa +12,
+ * bass-stavene (F-noekkel, ingen skift) laa helt rett. Etter denne
+ * korreksjonen traff tenoren 92 % av fasitens anslag.
+ *
+ * Terskelen 66 skiller en tenorstav fra en som virkelig ligger hoeyt.
+ * Den gjelder mannsstemmer; har noten sopran eller alt, staar G-noekkelen
+ * som den klinger og vi lar den vaere.
+ */
+function oktavAvNokkel(nokkel, skrevetMedian, harLyseStemmer) {
+  if (harLyseStemmer) return 0;
+  if (!nokkel || !nokkel.tegn) return skrevetMedian >= 66 ? -12 : 0;
+  if (nokkel.oktavskift) return 0;          // fila sier det selv
+  if (nokkel.tegn !== 'G') return 0;        // F- og C-noekkel staar som de klinger
+  return skrevetMedian >= 66 ? -12 : 0;
+}
+
+/**
  * Deler en stav i stemmer.
  *
  * Har fila skilt dem med <voice>, brukes det. Ellers deles hvert anslag
@@ -361,6 +389,9 @@ function byggStykke(doc, valg) {
   //
   // Vi overstyrer bare naar brukeren har sagt at det ER sangstemmer
   // her. Et ekte klaverstykke faar fortsatt vaere et klaverstykke.
+  // Sopran eller alt i noten? Da er G-noekkelen en vanlig G-noekkel, og
+  // oktavgjettinga under skal ligge unna. Se oktavAvNokkel.
+  const harLyseStemmer = (valg.stemmer || []).some((n) => /sopran|alt\b/i.test(n));
   const vilHaSang = (valg.stemmer || []).some((n) => !/^klaver/i.test(n));
   const altErKlaver = vilHaSang && doc.deler.every((d) => gruppeAv(d) === 'klaver');
 
@@ -378,9 +409,8 @@ function byggStykke(doc, valg) {
       if (paaStaven.length < 4) continue;
 
       const nokkel = del.nokler[stavNr] || {};
-      // Fila har alt notert oktavskiftet i noekkelen; da er
-      // tonehoeydene klingende og skal staa som de er.
-      const oktav = nokkel.oktavskift ? 0 : 0;
+      const oktav = oktavAvNokkel(
+        nokkel, median(paaStaven.map((n) => n.midi)), harLyseStemmer);
 
       const stemmer = stemmerPaaStav(paaStaven);
       const gruppe = (altErKlaver ? null : gruppeAv(del))
